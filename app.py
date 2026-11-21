@@ -19,12 +19,15 @@ from flask import Flask, Response, abort, g, redirect, render_template, request,
 from PIL import Image, ImageOps
 from werkzeug.security import check_password_hash
 from gps import point, distance, validate, read_track, photo_gps
+from mysql_db import Connection as MySQLConnection
+from mysql_schema import initialize_schema as initialize_mysql_schema
 
 app = Flask(__name__)
 app.config.update(SECRET_KEY=os.environ["WEB_SECRET"], SESSION_COOKIE_SECURE=True,
                   SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   MAX_CONTENT_LENGTH=520*1024**2)
 root = Path(os.environ["DRISHTI_DATA_DIR"]).resolve()
+database_url = os.getenv("DRISHTI_DATABASE_URL", "").strip()
 origin = os.environ.get("DRISHTI_API", "http://127.0.0.1:10000").rstrip("/")
 roles = json.loads(os.environ["WEB_USERS"])
 tolerance = float(os.getenv("GPS_TOLERANCE_M", "25"))
@@ -49,8 +52,11 @@ CREATE TABLE IF NOT EXISTS web_audit(id INTEGER PRIMARY KEY, at TEXT DEFAULT CUR
 
 def db():
     if "db" not in g:
-        g.db = sqlite3.connect(root / "drishti.sqlite3", timeout=30)
-        g.db.row_factory = sqlite3.Row
+        if database_url:
+            g.db = MySQLConnection(database_url, close_on_exit=False)
+        else:
+            g.db = sqlite3.connect(root / "drishti.sqlite3", timeout=30)
+            g.db.row_factory = sqlite3.Row
     return g.db
 
 
@@ -58,7 +64,10 @@ def db():
 def init():
     with db() as conn:
         conn.execute("SELECT id FROM segments LIMIT 1")
-        conn.executescript(schema)
+        if database_url:
+            initialize_mysql_schema(conn)
+        else:
+            conn.executescript(schema)
 
 
 @app.teardown_appcontext
@@ -133,10 +142,16 @@ def details(rid):
 
 @app.get("/media/<mid>")
 def media(mid):
-    row = db().execute("""SELECT m.rowid AS blob_id, m.kind, m.name, length(m.data) AS size
-        FROM web_media m JOIN web_reports r ON r.id=m.report WHERE m.id=?
-        AND ((r.status='Published' AND m.kind IN ('photo','video')) OR ?)""",
-        (mid, session.get("user") in roles)).fetchone()
+    if database_url:
+        row = db().execute("""SELECT m.kind, m.name, OCTET_LENGTH(m.data) AS size
+            FROM web_media m JOIN web_reports r ON r.id=m.report WHERE m.id=%s
+            AND ((r.status='Published' AND m.kind IN ('photo','video')) OR %s)""",
+            (mid, session.get("user") in roles)).fetchone()
+    else:
+        row = db().execute("""SELECT m.rowid AS blob_id, m.kind, m.name, length(m.data) AS size
+            FROM web_media m JOIN web_reports r ON r.id=m.report WHERE m.id=?
+            AND ((r.status='Published' AND m.kind IN ('photo','video')) OR ?)""",
+            (mid, session.get("user") in roles)).fetchone()
     if not row:
         abort(404)
     if row["kind"] == "video":
@@ -152,18 +167,30 @@ def media(mid):
             status = 206
             headers["Content-Range"] = f"bytes {start}-{stop-1}/{size}"
         def chunks():
-            # Short reads release SQLite snapshots between chunks and on disconnect.
-            from contextlib import closing
-            with closing(sqlite3.connect(root / "drishti.sqlite3", timeout=30)) as conn:
-                offset = start
-                while offset < stop:
-                    with conn.blobopen("web_media","data",row["blob_id"],readonly=True) as blob:
-                        blob.seek(offset)
-                        chunk = blob.read(min(65536,stop-offset))
-                    if not chunk:
-                        break
-                    offset += len(chunk)
-                    yield chunk
+            if database_url:
+                with MySQLConnection(database_url) as conn:
+                    offset = start
+                    while offset < stop:
+                        chunk = conn.execute(
+                            "SELECT SUBSTRING(data, %s, %s) AS payload FROM web_media WHERE id=%s",
+                            (offset + 1, min(65536, stop-offset), mid)
+                        ).fetchone()["payload"]
+                        if not chunk:
+                            break
+                        offset += len(chunk)
+                        yield chunk
+            else:
+                from contextlib import closing
+                with closing(sqlite3.connect(root / "drishti.sqlite3", timeout=30)) as conn:
+                    offset = start
+                    while offset < stop:
+                        with conn.blobopen("web_media","data",row["blob_id"],readonly=True) as blob:
+                            blob.seek(offset)
+                            chunk = blob.read(min(65536,stop-offset))
+                        if not chunk:
+                            break
+                        offset += len(chunk)
+                        yield chunk
         headers["Content-Length"] = str(stop-start)
         return Response(chunks(),status=status,headers=headers,mimetype="video/mp4")
     data = db().execute("SELECT data FROM web_media WHERE id=?", (mid,)).fetchone()[0]
@@ -282,7 +309,7 @@ def video_workspace(sid):
             abort(400, "The clip must contain video.")
         clip_id = uuid.uuid4().hex
         with db() as conn:
-            conn.execute("INSERT INTO web_video_clips(id,segment_id,title,start,end,author) VALUES(?,?,?,?,?,?)",
+            conn.execute("INSERT INTO web_video_clips(id,segment_id,title,`start`,`end`,author) VALUES(?,?,?,?,?,?)",
                          (clip_id,sid,title,start,end,session["user"]))
             audit(sid, "Saved video clip " + clip_id)
         return redirect(url_for("video_workspace", sid=sid, _anchor=clip_id), code=303)
