@@ -1,5 +1,5 @@
 # Drishti Web
-Public road observation register and private staff workspace. Deploy beside the Drishti FastAPI service on its Droplet. Flask renders the interface and Leaflet clusters published locations. Flask was chosen to reuse the Python media stack and access the existing SQLite database and local evidence volume. The mobile API remains unchanged.
+Public road observation register and private staff workspace. Deploy beside the Drishti FastAPI service on its Droplet. Flask renders the interface and Leaflet clusters published locations. Flask was chosen to reuse the Python media stack and access the shared database and local evidence volume. The mobile API remains unchanged.
 
 ## Install
 Use Python 3.11+ on the host. Create a virtual environment, install requirements, and configure the following in a protected service environment file. Generate WEB_SECRET with Python secrets.token_hex(32). Generate each password hash with werkzeug.security.generate_password_hash using a password prompted via getpass.
@@ -8,7 +8,7 @@ Use Python 3.11+ on the host. Create a virtual environment, install requirements
 |---|---|
 | WEB_SECRET | Random signing secret shared by web workers |
 | WEB_USERS | JSON mapping usernames to objects with hash and role. reviewer can publish. operator can ingest and inspect. |
-| DRISHTI_DATA_DIR | Existing Drishti data volume path containing drishti.sqlite3, uploads and instances |
+| DRISHTI_DATA_DIR | Existing Drishti data volume path containing uploads and instances, plus drishti.sqlite3 in SQLite mode |
 | DRISHTI_API | Private server origin, default http://127.0.0.1:10000 |
 | GPS_TOLERANCE_M | Independent reference tolerance, default 25 metres |
 
@@ -26,7 +26,7 @@ gunicorn --workers 2 --threads 4 --timeout 240 --bind 127.0.0.1:11000 app:app
 Use a separate HTTPS hostname with Caddy reverse_proxy 127.0.0.1:11000. Run Gunicorn under a service supervisor. Keep the capture API private. Configure ingress login throttling and upload limits. Session cookies require HTTPS. Node.js is required during installation to bundle Leaflet. Public OSM tiles require internet connectivity. Configure a licensed tile service for sustained traffic.
 
 ## Workflow and routes
-Public routes are /, /map, /reports/ID, /docs and authorized report attachments at /media/ID. Staff sign in at /login, upload on /admin, import current observations, and inspect source imagery and survey footage. The web app calls GET /v1/map and POST /v1/detect and /v1/segments. Video preview and GPX inspection read the existing local store. Web tables hold editorial decisions, selected media and an audit log within the existing SQLite database. /admin/reports/ID supports draft, reject, archive and publish. Public media must be manually sanitized before attaching. Public video containers may contain audio or metadata. Originals stay private. Print a report to save PDF.
+Public routes are /, /map, /reports/ID, /docs and authorized report attachments at /media/ID. Staff sign in at /login, upload on /admin, import current observations, and inspect source imagery and survey footage. The web app calls GET /v1/map and POST /v1/detect and /v1/segments. Video preview and GPX inspection read the existing local store. Web tables hold editorial decisions, selected media and an audit log within the shared database. /admin/reports/ID supports draft, reject, archive and publish. Public media must be manually sanitized before attaching. Public video containers may contain audio or metadata. Originals stay private. Print a report to save PDF.
 
 ## GPS methodology
 /admin/gps accepts EXIF, Drishti GPS JSON, GPX, or a manually transcribed overlay. Coordinates are range checked. Ambiguous valid swapped pairs require independent reference evidence. Haversine distances use a 6,371 km mean Earth radius. Nearest track-point distance is diagnostic and cannot confirm time alignment. Non-increasing timestamps and speeds over 55 m/s are flagged. A reviewer can record a correction while preserving original camera coordinates. Survey camera locations approximate the observation position. GPS tests use synthetic fixtures. Field accuracy requires independently surveyed points and representative device samples.
@@ -49,6 +49,9 @@ Set API_PYTHON to the backend interpreter and TEST_CHECKPOINT to a compatible lo
 Vercel builds the overview, map shell, documentation and workspace availability page into public/. This deployment works on the assigned vercel.app domain without credentials. It displays a disconnected state until a persistent survey service is integrated. Use the Droplet installation above for authenticated operations and live reports. Local preview: run npm ci, install Jinja2 (included with Flask), run python build_public.py to refresh the checked-in HTML, run node build-vercel.cjs and serve the public directory with a clean-URL static server.
 
 ## Staff video library
-Open **Review workspace → Video library** to find all accepted segments by survey, ID or processing status. In the editor, use the player position to mark the start and end, preview the selection, then save a named clip. Saved edits and audit entries share the Drishti SQLite volume. Staff can play a saved selection or export it as an MP4. Exports are generated on demand and leave the source recording, GPX, and inference results intact.
+Open **Review workspace → Video library** to find all accepted segments by survey, ID or processing status. In the editor, use the player position to mark the start and end, preview the selection, then save a named clip. Saved edits and audit entries use the shared Drishti database. Staff can play a saved selection or export it as an MP4. Exports are generated on demand and leave the source recording, GPX, and inference results intact.
 
 On an existing Droplet install, install FFmpeg (including libx264) with `sudo apt-get install ffmpeg`, rerun `flask --app app init` with the existing service environment to add the clip table, and restart Gunicorn. The static Vercel site continues to show staff-service availability until the full backend is hosted.
+
+## MariaDB and phpMyAdmin
+See [Droplet cutover and data migration](MARIADB.md). Configure the same `DRISHTI_DATABASE_URL` for both services.
