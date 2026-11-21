@@ -10,7 +10,8 @@ import uuid
 from urllib.parse import urlsplit
 
 import requests
-from flask import Flask, abort, g, redirect, render_template, request, send_file, session
+from requests_toolbelt.multipart.encoder import MultipartEncoder
+from flask import Flask, Response, abort, g, redirect, render_template, request, send_file, session
 from PIL import Image, ImageOps
 from werkzeug.security import check_password_hash
 from gps import point, distance, validate, read_track, photo_gps
@@ -123,10 +124,42 @@ def details(rid):
 
 @app.get("/media/<mid>")
 def media(mid):
-    row = db().execute("SELECT m.* FROM web_media m JOIN web_reports r ON r.id=m.report WHERE m.id=? AND ((r.status='Published' AND m.kind IN ('photo','video')) OR ?)", (mid,session.get("user") in roles)).fetchone()
+    row = db().execute("""SELECT m.rowid AS blob_id, m.kind, m.name, length(m.data) AS size
+        FROM web_media m JOIN web_reports r ON r.id=m.report WHERE m.id=?
+        AND ((r.status='Published' AND m.kind IN ('photo','video')) OR ?)""",
+        (mid, session.get("user") in roles)).fetchone()
     if not row:
         abort(404)
-    return send_file(io.BytesIO(row["data"]), mimetype={"photo":"image/jpeg","video":"video/mp4","document":"application/pdf"}[row["kind"]],download_name=row["name"],as_attachment=row["kind"]=="document")
+    if row["kind"] == "video":
+        size = row["size"]
+        start, stop = 0, size
+        status = 200
+        headers = {"Accept-Ranges":"bytes"}
+        if "Range" in request.headers:
+            bounds = request.range.range_for_length(size) if request.range else None
+            if bounds is None:
+                return Response(status=416, headers={"Content-Range":f"bytes */{size}"})
+            start, stop = bounds
+            status = 206
+            headers["Content-Range"] = f"bytes {start}-{stop-1}/{size}"
+        def chunks():
+            # Short reads release SQLite snapshots between chunks and on disconnect.
+            from contextlib import closing
+            with closing(sqlite3.connect(root / "drishti.sqlite3", timeout=30)) as conn:
+                offset = start
+                while offset < stop:
+                    with conn.blobopen("web_media","data",row["blob_id"],readonly=True) as blob:
+                        blob.seek(offset)
+                        chunk = blob.read(min(65536,stop-offset))
+                    if not chunk:
+                        break
+                    offset += len(chunk)
+                    yield chunk
+        headers["Content-Length"] = str(stop-start)
+        return Response(chunks(),status=status,headers=headers,mimetype="video/mp4")
+    data = db().execute("SELECT data FROM web_media WHERE id=?", (mid,)).fetchone()[0]
+    return send_file(io.BytesIO(data), mimetype={"photo":"image/jpeg","document":"application/pdf"}[row["kind"]],download_name=row["name"],as_attachment=row["kind"]=="document")
+
 
 
 @app.get("/admin")
@@ -199,8 +232,9 @@ def upload():
     meta = json.loads(raw)
     key = meta["segmentId"] if kind=="video" else request.form["key"]
     files = {k:(request.files[k].filename,request.files[k].stream,request.files[k].mimetype) for k in fields}
-    result = requests.post(origin+("/v1/segments" if kind=="video" else "/v1/detect"), data={"metadata":raw},
-                           files=files,headers={"Idempotency-Key":key},timeout=180)
+    body = MultipartEncoder(fields={"metadata":raw, **files})
+    result = requests.post(origin+("/v1/segments" if kind=="video" else "/v1/detect"), data=body,
+                           headers={"Content-Type":body.content_type,"Idempotency-Key":key},timeout=180)
     result.raise_for_status()
     with db():
         audit(key,"Uploaded "+kind)

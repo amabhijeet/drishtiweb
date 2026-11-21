@@ -1,0 +1,1 @@
+{"name":"drishti-web-map","private":true,"scripts":{"postinstall":"node prepare-map.cjs"},"dependencies":{"leaflet":"1.9.4","leaflet.markercluster":"1.5.3"}}

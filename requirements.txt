@@ -4,3 +4,4 @@ Pillow>=11,<14
 requests>=2.32,<3
 defusedxml==0.7.1
 av==18.1.0
+requests-toolbelt==1.0.0
