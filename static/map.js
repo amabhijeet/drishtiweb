@@ -3,7 +3,7 @@ const search = document.querySelector('#search');
 let refresh = () => {};
 search?.addEventListener('input', () => {
   const q = search.value.toLowerCase();
-  for (const row of list.querySelectorAll('article')) row.hidden = !row.textContent.toLowerCase().includes(q);
+  for (const row of list.querySelectorAll('article, tbody tr')) row.hidden = !row.textContent.toLowerCase().includes(q);
   refresh(q);
 });
 const canvas = document.querySelector('#map');
