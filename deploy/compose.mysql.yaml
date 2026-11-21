@@ -1,0 +1,40 @@
+# Private database/admin stack for a single DigitalOcean Droplet.
+# Start from drishtiweb checkout:
+#   docker compose --env-file .env.mysql -f deploy/compose.mysql.yaml up -d
+# Bindings are loopback-only; access phpMyAdmin through an SSH tunnel.
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set in private env file}
+      MYSQL_DATABASE: drishti
+      MYSQL_USER: drishti
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set in private env file}
+    command: ["--max_allowed_packet=128M", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysqladmin ping -h 127.0.0.1 -u drishti --silent"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+
+  phpmyadmin:
+    image: phpmyadmin:5-apache
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: "3306"
+      UPLOAD_LIMIT: 128M
+    ports:
+      - "127.0.0.1:8081:80"
+
+volumes:
+  mysql-data:
