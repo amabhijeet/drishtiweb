@@ -11,6 +11,12 @@ TABLES = ("surveys", "segments", "images", "detections", "web_reports", "web_med
 
 def migrate(path):
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as source, Connection() as target:
+        lock = target.execute("SELECT GET_LOCK(CONCAT(DATABASE(), ':drishti-schema'), 5) AS acquired").fetchone()
+        if lock["acquired"] != 1:
+            raise RuntimeError("Another Drishti schema migration is running.")
+        versions = target.execute("SELECT version,state FROM schema_migrations ORDER BY version").fetchall()
+        if [(row["version"], row["state"]) for row in versions] != [(1, "applied")]:
+            raise RuntimeError("Prepare the empty MariaDB database with app.migrate_db --baseline-only first.")
         source.execute("BEGIN")
         existing = {name for name, in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         required = {"segments", "images", "detections"}
