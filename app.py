@@ -1,4 +1,4 @@
-import functools
+from datetime import datetime, timezone
 import hmac
 import io
 import json
@@ -13,6 +13,7 @@ import uuid
 from urllib.parse import urlsplit
 
 import av
+import click
 import requests
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 from flask import Flask, Response, abort, g, redirect, render_template, request, send_file, session, url_for
@@ -52,6 +53,7 @@ def db():
     if "db" not in g:
         if mysql_db.enabled():
             g.db = mysql_db.Connection()
+            mysql_db.require_current(g.db)
         else:
             g.db = sqlite3.connect(root / "drishti.sqlite3", timeout=30)
             g.db.row_factory = sqlite3.Row
@@ -64,10 +66,16 @@ def write_transaction():
 
 
 @app.cli.command("init")
-def init():
+@click.option("--require-mariadb", is_flag=True, help="Verify the staff portal production database.")
+def init(require_mariadb):
+    if require_mariadb and not mysql_db.enabled():
+        raise click.ClickException("DRISHTI_DATABASE_URL is required for the Droplet deployment.")
+    if require_mariadb and not os.access(root / "report-media", os.W_OK | os.X_OK):
+        raise click.ClickException("The staff service must have write access to DRISHTI_DATA_DIR/report-media.")
     with write_transaction() as conn:
         conn.execute("SELECT id FROM segments LIMIT 1")
-        conn.executescript(Path(__file__).with_name("mysql_schema.sql").read_text() if mysql_db.enabled() else schema)
+        if not mysql_db.enabled():
+            conn.executescript(schema)
 
 
 @app.teardown_appcontext
@@ -138,21 +146,26 @@ def details(rid):
     private = request.path.startswith("/admin")
     r = report(rid, not private)
     media = db().execute("SELECT id,kind,name FROM web_media WHERE report=? AND (? OR kind IN ('photo','video'))", (rid,private))
+    detection_id = r["detection_id"] if mysql_db.enabled() else rid
     detection = (db().execute("""SELECT d.id,d.segment FROM detections d JOIN segments s ON s.id=d.segment
                               WHERE d.id=? AND d.segment=? AND s.status='done'""",
-                              (rid, r["source_id"])).fetchone() if private and r["source"] == "video" else None)
+                              (detection_id, r["source_id"])).fetchone() if private and r["source"] == "video" else None)
     return render_template("page.html",page="detail",r=r,media=media,private=private,detection=detection)
 
 
 @app.get("/media/<mid>")
 def media(mid):
-    blob_id = "" if mysql_db.enabled() else "m.rowid AS blob_id, "
-    row = db().execute(f"""SELECT {blob_id}m.kind, m.name, length(m.data) AS size
-        FROM web_media m JOIN web_reports r ON r.id=m.report WHERE m.id=?
+    fields = "m.path" if mysql_db.enabled() else "m.rowid AS blob_id, length(m.data) AS size"
+    row = db().execute(f"""SELECT {fields},m.kind,m.name FROM web_media m
+        JOIN web_reports r ON r.id=m.report WHERE m.id=?
         AND ((r.status='Published' AND m.kind IN ('photo','video')) OR ?)""",
         (mid, session.get("user") in roles)).fetchone()
     if not row:
         abort(404)
+    mime = {"photo":"image/jpeg","video":"video/mp4","document":"application/pdf"}[row["kind"]]
+    if mysql_db.enabled():
+        return send_file(safe_path("report-media", row["path"]), mimetype=mime, conditional=True,
+                         download_name=row["name"], as_attachment=row["kind"] == "document")
     if row["kind"] == "video":
         size = row["size"]
         start, stop = 0, size
@@ -167,19 +180,12 @@ def media(mid):
             headers["Content-Range"] = f"bytes {start}-{stop-1}/{size}"
         def chunks():
             from contextlib import closing
-            connection = mysql_db.Connection() if mysql_db.enabled() else sqlite3.connect(root / "drishti.sqlite3", timeout=30)
-            with closing(connection) as conn:
+            with closing(sqlite3.connect(root / "drishti.sqlite3", timeout=30)) as conn:
                 offset = start
                 while offset < stop:
-                    size = min(65536, stop - offset)
-                    if mysql_db.enabled():
-                        result = conn.execute("SELECT SUBSTR(data, ?, ?) AS chunk FROM web_media WHERE id=?",
-                                              (offset + 1, size, mid)).fetchone()
-                        chunk = result["chunk"]
-                    else:
-                        with conn.blobopen("web_media", "data", row["blob_id"], readonly=True) as blob:
-                            blob.seek(offset)
-                            chunk = blob.read(size)
+                    with conn.blobopen("web_media", "data", row["blob_id"], readonly=True) as blob:
+                        blob.seek(offset)
+                        chunk = blob.read(min(65536, stop - offset))
                     if not chunk:
                         break
                     offset += len(chunk)
@@ -215,10 +221,21 @@ def sync():
                     parent = conn.execute(f"SELECT metadata FROM {table} WHERE id=?", (source_id,)).fetchone()
                     meta = json.loads(parent["metadata"]) if parent else {}
                     captured = meta.get("timestamp") or meta.get("startedAt")
-                insert = "INSERT INTO" if mysql_db.enabled() else "INSERT OR IGNORE INTO"
-                duplicate = " ON DUPLICATE KEY UPDATE id=VALUES(id)" if mysql_db.enabled() else ""
-                conn.execute(insert + """ web_reports(id,source,source_id,original_lat,original_lon,lat,lon,confidence,evidence,captured)
-                    VALUES(?,?,?,?,?,?,?,?,?,?)""" + duplicate,(item["id"],item["source"],source_id,lat,lon,lat,lon,item["confidence"],urlsplit(item["imageUrl"]).path,captured))
+                fields = (item["id"],item["source"],source_id,lat,lon,lat,lon,item["confidence"],
+                          urlsplit(item["imageUrl"]).path,captured)
+                if mysql_db.enabled():
+                    if captured:
+                        moment = datetime.fromisoformat(captured.replace("Z", "+00:00"))
+                        if moment.tzinfo:
+                            moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
+                        fields = (*fields[:-1], moment)
+                    conn.execute("""INSERT INTO web_reports(id,source,source_id,original_lat,original_lon,lat,lon,
+                                  confidence,evidence,captured,detection_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                                  ON DUPLICATE KEY UPDATE id=VALUES(id)""",
+                                 (*fields, item["id"] if item["source"] == "video" else None))
+                else:
+                    conn.execute("""INSERT OR IGNORE INTO web_reports(id,source,source_id,original_lat,original_lon,
+                                  lat,lon,confidence,evidence,captured) VALUES(?,?,?,?,?,?,?,?,?,?)""", fields)
             offset += len(batch["detections"])
             if offset >= batch["total"] or not batch["detections"]:
                 break
@@ -291,7 +308,7 @@ def video_library():
 
 @app.route("/admin/videos/<sid>", methods=["GET", "POST"])
 def video_workspace(sid):
-    job = db().execute("SELECT id,session,status,created,directory,video_path,device_id,accepted_at,processing_started_at,processed_at FROM segments WHERE id=?", (sid,)).fetchone()
+    job = db().execute("SELECT id,session,survey_id,status,created,directory,video_path,device_id,accepted_at,processing_started_at,processed_at FROM segments WHERE id=?", (sid,)).fetchone()
     if not job:
         abort(404)
     if request.method == "POST":
@@ -323,9 +340,32 @@ def video_workspace(sid):
         return redirect(url_for("video_workspace", sid=sid, _anchor=clip_id), code=303)
     clips = db().execute("SELECT * FROM web_video_clips WHERE segment_id=? ORDER BY created DESC,id DESC",
                         (sid,)).fetchall()
-    detections = db().execute("""SELECT id,latitude,longitude,confidence,`offset` FROM detections
+    detections = db().execute("""SELECT id,latitude,longitude,confidence,`offset`,review_status FROM detections
                                  WHERE segment=? ORDER BY `offset`,id""", (sid,)).fetchall() if job["status"] == "done" else []
-    return render_template("page.html", page="video_workspace", job=job, clips=clips, detections=detections)
+    survey = (db().execute("SELECT id,device_id,recorded_from,last_recorded_at,status FROM surveys WHERE id=?",
+                           (job["survey_id"],)).fetchone() if mysql_db.enabled() else None)
+    return render_template("page.html", page="video_workspace", job=job, clips=clips, detections=detections,
+                           survey=survey, can_verify=roles[session["user"]]["role"]=="reviewer")
+
+
+@app.post("/admin/detections/<detection_id>/review")
+def review_detection(detection_id):
+    if roles[session["user"]]["role"] != "reviewer":
+        abort(403)
+    status = request.form.get("review_status")
+    if status not in ("pending", "verified", "rejected"):
+        abort(400, "Unknown detection review status.")
+    with write_transaction() as conn:
+        query = """SELECT d.segment FROM detections d JOIN segments s ON s.id=d.segment
+                   WHERE d.id=? AND s.status='done'"""
+        row = conn.execute(query + (" FOR UPDATE" if mysql_db.enabled() else ""), (detection_id,)).fetchone()
+        if not row:
+            abort(404)
+        result = conn.execute("UPDATE detections SET review_status=? WHERE id=? AND review_status<>?",
+                              (status, detection_id, status))
+        if result.rowcount:
+            audit(detection_id, "Detection review: " + status)
+    return redirect(url_for("video_workspace", sid=row["segment"], _anchor=detection_id), code=303)
 
 
 @app.get("/admin/video-clips/<clip_id>/download")
@@ -440,7 +480,24 @@ def review(rid):
                 out=io.BytesIO()
                 ImageOps.exif_transpose(img).convert("RGB").save(out,"JPEG",quality=88)
                 raw,kind=out.getvalue(),"photo"
-            conn.execute("INSERT INTO web_media VALUES(?,?,?,?,?)",(uuid.uuid4().hex,rid,kind,file.filename,raw))
+            media_id = uuid.uuid4().hex
+            if mysql_db.enabled():
+                # The file is durable before its reference commits. Keep a staged file if the SQL outcome is unknown.
+                directory = root / "report-media"
+                with (directory / media_id).open("xb") as output:
+                    os.fchmod(output.fileno(), 0o640)
+                    output.write(raw)
+                    output.flush()
+                    os.fsync(output.fileno())
+                fd = os.open(directory, os.O_RDONLY)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                conn.execute("INSERT INTO web_media(id,report,kind,name,path) VALUES(?,?,?,?,?)",
+                             (media_id,rid,kind,file.filename,media_id))
+            else:
+                conn.execute("INSERT INTO web_media VALUES(?,?,?,?,?)",(media_id,rid,kind,file.filename,raw))
         conn.execute("UPDATE web_reports SET lat=?,lon=?,gps=?,discrepancy=?,title=?,description=?,place=?,severity=?,status=? WHERE id=?",
             (lat,lon,gps_state,meters,request.form["title"],request.form["description"],request.form["place"],request.form["severity"],status,rid))
         audit(rid,json.dumps(dict(previous=[previous["lat"],previous["lon"],previous["status"]],current=[lat,lon,status],reference=ref,validation=gps_state)))
