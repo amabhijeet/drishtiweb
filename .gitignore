@@ -3,3 +3,8 @@ node_modules/
 static/vendor/
 __pycache__/
 public/
+.env.mysql
+.env
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
