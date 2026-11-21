@@ -1,0 +1,66 @@
+{% if page == 'videos' %}
+<p><a href="{{ url_for('admin') }}">← Review workspace</a></p>
+<h1>Video library</h1>
+<p>Browse recordings accepted by the processing server. Processing status tracks inference progress.</p>
+<div class="video-counts">
+  {% for item in counts %}<a href="{{ url_for('video_library', status=item.status) }}"><strong>{{ item.count }}</strong> {{ item.status|capitalize }}</a>{% endfor %}
+</div>
+<form method="get" class="video-filters">
+  <label>Find a recording<input name="q" type="search" value="{{ filters.q }}" placeholder="Recording or survey ID"></label>
+  <label>Processing status<select name="status"><option value="">All statuses</option>
+  {% for item in counts %}<option value="{{ item.status }}"{% if filters.status==item.status %} selected{% endif %}>{{ item.status|capitalize }}</option>{% endfor %}
+  </select></label>
+  <label>Survey ID<input name="survey" value="{{ filters.survey }}"></label>
+  <button>Apply filters</button><a href="{{ url_for('video_library') }}">Clear filters</a>
+</form>
+<div class="video-recordings">
+{% for job in jobs %}
+  <article><div><strong>{{ job.id }}</strong><p><a href="{{ url_for('video_library', survey=job.session) }}">{{ job.session }}</a> · {{ job.created }} UTC · {{ job.status|capitalize }}</p></div>
+  <a href="{{ url_for('video_workspace', sid=job.id) }}">Open player →</a></article>
+{% else %}<p>No accepted recordings match these filters.</p>{% endfor %}
+</div>
+<nav aria-label="Video library pages">
+{% if page_number > 1 %}<a href="{{ url_for('video_library', p=page_number-1, **filters) }}">← Previous</a>{% endif %}
+{% if has_more %}<a href="{{ url_for('video_library', p=page_number+1, **filters) }}">Next →</a>{% endif %}
+</nav>
+{% else %}
+<p><a href="{{ url_for('video_library') }}">← Video library</a></p>
+<h1>Video editor</h1>
+<p class="video-id">{{ job.id }} · {{ job.status|capitalize }}</p>
+<div class="actions">
+  <a href="{{ url_for('video_library', survey=job.session) }}">Survey {{ job.session }}</a>
+  <a href="{{ url_for('segment', sid=job.id, kind='track') }}">GPS track</a>
+  <a href="{{ url_for('segment', sid=job.id, kind='video', download=1) }}">Download original</a>
+</div>
+<div class="video-editor">
+  <div>
+    <video id="recording" controls playsinline preload="metadata" src="{{ url_for('segment', sid=job.id, kind='video') }}"></video>
+    <p id="player-feedback" role="status" hidden></p>
+  </div>
+  <form method="post" id="trim-form">
+    <h2>Trim a clip</h2>
+    <p>Save an edit and download it as an MP4. The original recording and GPS track are preserved.</p>
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label>Clip title<input name="title" required maxlength="100"></label>
+    <label>Start time in seconds<input name="start" type="number" min="0" step=".001" value="0" required></label>
+    <button type="button" data-mark="start">Use playhead for start</button>
+    <label>End time in seconds<input name="end" type="number" min="0" step=".001" required></label>
+    <button type="button" data-mark="end">Use playhead for end</button>
+    <div class="actions"><button type="button" id="preview-trim">Preview trim</button><button>Save trim</button></div>
+    <p id="trim-feedback" role="status"></p>
+  </form>
+</div>
+<h2>Saved clips</h2>
+<div class="video-recordings">
+{% for clip in clips %}
+<article id="{{ clip.id }}">
+  <div><strong>{{ clip.title }}</strong><p>{{ "%.3f"|format(clip.start) }}–{{ "%.3f"|format(clip.end) }} s · {{ clip.author }} · {{ clip.created }} UTC</p></div>
+  <div class="actions">
+    <button type="button" data-start="{{ clip.start }}" data-end="{{ clip.end }}">Play clip</button>
+    <a href="{{ url_for('export_clip', clip_id=clip.id) }}">Download MP4</a>
+  </div>
+</article>
+{% else %}<p>No clips saved for this recording.</p>{% endfor %}
+</div>
+<script defer src="{{ url_for('static', filename='video-editor.js') }}"></script>
+{% endif %}

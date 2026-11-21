@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import tempfile
+import time
 import subprocess
 import uuid
 
@@ -71,11 +72,15 @@ def main():
           return Promise.all([0,1,2,0].map(upload));
         }""",dict(prefix=prefix,stamp=stamp.isoformat(),track=track,encoded=[base64.b64encode(c).decode() for c in clips]))
         assert all(r==[200,"/admin"] for r in result), result
-        page.wait_for_function("""async prefix => {
-          const doc=new DOMParser().parseFromString(await (await fetch('/admin')).text(),'text/html');
-          const jobs=[...doc.querySelectorAll('article')].filter(a=>a.querySelector('a[href*="/segments/"]') && a.textContent.includes(prefix));
-          return jobs.length===3 && jobs.every(a=>a.textContent.includes('done'));
-        }""",arg=prefix,timeout=120000)
+        deadline = time.monotonic() + 120
+        while True:
+            response = context.request.get(base + "/admin/videos", params={"q":prefix, "status":"done"})
+            assert response.ok
+            if response.text().count('>Open player') == 3:
+                break
+            if time.monotonic() >= deadline:
+                raise AssertionError("Three accepted recordings did not finish processing")
+            time.sleep(0.25)
         for width in (390,1440):
             page.set_viewport_size({"width":width,"height":850})
             for route in ("/admin","/admin/gps","/admin/segments/"+prefix+"-0/track"):
@@ -88,6 +93,35 @@ def main():
             assert response.status==206 and response.body()==clips[i][:32]
             assert context.request.get(url+"/video?download=1").body()==clips[i]
             assert context.request.get(url+"/track").ok
+        library = base + "/admin/videos"
+        assert page.goto(library + "?status=done&survey=" + prefix + "-camera-0",wait_until="domcontentloaded").ok
+        assert page.locator(".video-recordings article").count() == 1, page.locator("main").inner_text()
+        page.locator(".video-recordings a[href*='/admin/videos/']").click()
+        page.wait_for_function("document.querySelector('#recording').readyState >= 1")
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        rejected = page.evaluate("""async () => {
+          const form = new FormData(document.querySelector('#trim-form'));
+          form.set('title', 'Invalid cut');
+          form.set('start', '0.2');
+          form.set('end', '10');
+          return (await fetch(location.href, {method:'POST', body:form})).status;
+        }""")
+        assert rejected == 400
+        page.locator('[name=title]').fill("Review cut")
+        page.locator('[name=start]').fill("0.2")
+        page.locator('[name=end]').fill("0.7")
+        page.get_by_role("button",name="Preview trim").click()
+        page.wait_for_function("document.querySelector('#recording').paused && document.querySelector('#recording').currentTime >= 0.7")
+        page.get_by_role("button",name="Save trim").click()
+        page.get_by_text("Review cut",exact=True).wait_for()
+        export = page.get_by_role("link",name="Download MP4").get_attribute("href")
+        exported = context.request.get(base + export)
+        assert exported.ok and exported.body() != clips[0]
+        cut = Path(folder) / "trimmed.mp4"
+        cut.write_bytes(exported.body())
+        seconds = float(subprocess.check_output(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(cut)]))
+        assert 0.4 <= seconds <= 0.6, seconds
+        assert context.request.get(base + f"/admin/segments/{prefix}-0/video").body() == clips[0]
         played = page.evaluate("""async prefix => Promise.all([0,1,2].map(async i=>{
           const v=document.createElement('video'); v.muted=true; document.body.append(v);
           v.src='/admin/segments/'+prefix+'-'+i+'/video';
@@ -96,6 +130,7 @@ def main():
           return v.videoWidth;
         }))""",prefix)
         assert played==[160,160,160] and not errors,(played,errors)
+        print("PASS: filtered video library, in-page trim preview, saved clip, MP4 export and original byte preservation.")
         print("PASS: 12 viewport/route combinations, maps, login, 3 parallel segment uploads + duplicate, 3 completed jobs, range responses, GPX views and simultaneous Chromium playback.")
         browser.close()
 

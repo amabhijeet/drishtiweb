@@ -47,3 +47,8 @@ Set API_PYTHON to the backend interpreter and TEST_CHECKPOINT to a compatible lo
 
 ## Vercel public site
 Vercel builds the overview, map shell, documentation and workspace availability page into public/. This deployment works on the assigned vercel.app domain without credentials. It displays a disconnected state until a persistent survey service is integrated. Use the Droplet installation above for authenticated operations and live reports. Local preview: run npm ci, install Jinja2 (included with Flask), run python build_public.py to refresh the checked-in HTML, run node build-vercel.cjs and serve the public directory with a clean-URL static server.
+
+## Staff video library
+Open **Review workspace → Video library** to find all accepted segments by survey, ID or processing status. In the editor, use the player position to mark the start and end, preview the selection, then save a named clip. Saved edits and audit entries share the Drishti SQLite volume. Staff can play a saved selection or export it as an MP4. Exports are generated on demand and leave the source recording, GPX, and inference results intact.
+
+On an existing Droplet install, install FFmpeg (including libx264) with `sudo apt-get install ffmpeg`, rerun `flask --app app init` with the existing service environment to add the clip table, and restart Gunicorn. The static Vercel site continues to show staff-service availability until the full backend is hosted.

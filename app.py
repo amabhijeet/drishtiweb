@@ -3,15 +3,19 @@ import hmac
 import io
 import json
 import os
+import math
+import subprocess
+import tempfile
 from pathlib import Path
 import secrets
 import sqlite3
 import uuid
 from urllib.parse import urlsplit
 
+import av
 import requests
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-from flask import Flask, Response, abort, g, redirect, render_template, request, send_file, session
+from flask import Flask, Response, abort, g, redirect, render_template, request, send_file, session, url_for
 from PIL import Image, ImageOps
 from werkzeug.security import check_password_hash
 from gps import point, distance, validate, read_track, photo_gps
@@ -33,6 +37,11 @@ CREATE TABLE IF NOT EXISTS web_reports(
  description TEXT DEFAULT '', place TEXT DEFAULT '', severity TEXT DEFAULT 'Unassessed',
  status TEXT DEFAULT 'Draft', gps TEXT DEFAULT 'Valid coordinate format', discrepancy REAL);
 CREATE TABLE IF NOT EXISTS web_media(id TEXT PRIMARY KEY, report TEXT, kind TEXT, name TEXT, data BLOB);
+CREATE TABLE IF NOT EXISTS web_video_clips(
+ id TEXT PRIMARY KEY, segment_id TEXT NOT NULL, title TEXT NOT NULL,
+ start REAL NOT NULL, end REAL NOT NULL, author TEXT NOT NULL,
+ created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS web_video_clips_segment ON web_video_clips(segment_id, created);
 CREATE TABLE IF NOT EXISTS web_audit(id INTEGER PRIMARY KEY, at TEXT DEFAULT CURRENT_TIMESTAMP,
  actor TEXT, report TEXT, action TEXT);
 """
@@ -165,7 +174,7 @@ def media(mid):
 @app.get("/admin")
 def admin():
     return render_template("page.html",page="admin",rows=db().execute("SELECT * FROM web_reports ORDER BY captured DESC").fetchall(),
-        jobs=db().execute("SELECT id,session,status,created FROM segments ORDER BY created DESC").fetchall(),
+        video_count=db().execute("SELECT COUNT(*) FROM segments").fetchone()[0],
         events=db().execute("SELECT * FROM web_audit ORDER BY id DESC LIMIT 100").fetchall())
 
 
@@ -220,6 +229,92 @@ def segment(sid,kind):
         points,warnings=read_track(path.read_bytes())
         return render_template("page.html",page="track",points=points,warnings=warnings)
     return send_file(path,mimetype="video/mp4",conditional=True,as_attachment=request.args.get("download")=="1")
+
+
+@app.get("/admin/videos")
+def video_library():
+    filters = {key: request.args.get(key, "").strip()[:160] for key in ("q", "status", "survey")}
+    page_number = max(1, min(request.args.get("p", 1, type=int), 1000000))
+    conditions, params = [], []
+    if filters["q"]:
+        conditions.append("(instr(lower(id), lower(?)) OR instr(lower(session), lower(?)))")
+        params.extend([filters["q"]] * 2)
+    for key, column in (("status", "status"), ("survey", "session")):
+        if filters[key]:
+            conditions.append(column + " = ?")
+            params.append(filters[key])
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    conn = db()
+    jobs = conn.execute(
+        "SELECT id,session,status,created FROM segments" + where +
+        " ORDER BY created DESC,id DESC LIMIT 31 OFFSET ?", (*params, (page_number - 1) * 30)
+    ).fetchall()
+    counts = conn.execute("SELECT status, COUNT(*) AS count FROM segments GROUP BY status").fetchall()
+    return render_template("page.html", page="videos", jobs=jobs[:30], has_more=len(jobs)>30,
+                           filters=filters, page_number=page_number, counts=counts)
+
+
+@app.route("/admin/videos/<sid>", methods=["GET", "POST"])
+def video_workspace(sid):
+    job = db().execute("SELECT id,session,status,created,directory FROM segments WHERE id=?", (sid,)).fetchone()
+    if not job:
+        abort(404)
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        try:
+            start, end = (float(request.form.get(key, "")) for key in ("start", "end"))
+        except ValueError:
+            abort(400, "Enter numeric trim times.")
+        if not title or len(title) > 100 or not (math.isfinite(start) and math.isfinite(end) and 0 <= start < end):
+            abort(400, "Enter a clip title and a valid start and end time.")
+        path = safe_path("uploads", Path(job["directory"]) / "video.mp4")
+        try:
+            with av.open(str(path)) as container:
+                stream = container.streams.video[0]
+                duration = (float(stream.duration * stream.time_base) if stream.duration is not None
+                            else (container.duration or 0) / 1_000_000)
+        except (OSError, ValueError, IndexError):
+            abort(422, "The recording duration could not be read.")
+        if end > duration + 0.001:
+            abort(400, "The clip end is beyond the recording duration.")
+        end = min(end, duration)
+        if end <= start:
+            abort(400, "The clip must contain video.")
+        clip_id = uuid.uuid4().hex
+        with db() as conn:
+            conn.execute("INSERT INTO web_video_clips(id,segment_id,title,start,end,author) VALUES(?,?,?,?,?,?)",
+                         (clip_id,sid,title,start,end,session["user"]))
+            audit(sid, "Saved video clip " + clip_id)
+        return redirect(url_for("video_workspace", sid=sid, _anchor=clip_id), code=303)
+    clips = db().execute("SELECT * FROM web_video_clips WHERE segment_id=? ORDER BY created DESC,id DESC",
+                        (sid,)).fetchall()
+    return render_template("page.html", page="video_workspace", job=job, clips=clips)
+
+
+@app.get("/admin/video-clips/<clip_id>/download")
+def export_clip(clip_id):
+    clip = db().execute("""
+        SELECT c.*, s.directory FROM web_video_clips c JOIN segments s ON s.id=c.segment_id WHERE c.id=?
+    """, (clip_id,)).fetchone()
+    if not clip:
+        abort(404)
+    source = safe_path("uploads", Path(clip["directory"]) / "video.mp4")
+    with tempfile.TemporaryDirectory(prefix="drishti-clip-") as temp:
+        output = Path(temp) / "clip.mp4"
+        try:
+            subprocess.run([
+                "ffmpeg", "-nostdin", "-v", "error", "-ss", str(clip["start"]), "-i", str(source),
+                "-t", str(clip["end"] - clip["start"]), "-map", "0:v:0", "-map", "0:a:0?",
+                "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-movflags", "+faststart", str(output)
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=90)
+        except FileNotFoundError:
+            abort(503, "FFmpeg is required for clip export.")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            abort(422, "The clip could not be exported.")
+        # Keep the open file available for streaming after temporary path cleanup on Linux.
+        binary = output.open("rb")
+        return send_file(binary, mimetype="video/mp4", as_attachment=True, download_name=f"clip-{clip_id}.mp4")
 
 
 @app.post("/admin/upload")
