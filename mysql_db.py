@@ -69,5 +69,5 @@ def require_current(db):
         versions = db.execute("SELECT version,state FROM schema_migrations ORDER BY version").fetchall()
     except pymysql.MySQLError as error:
         raise RuntimeError("Run the Drishti MariaDB migrator before starting the staff portal.") from error
-    if [(r["version"], r["state"]) for r in versions] != [(1, "applied"), (2, "applied")]:
+    if [(r["version"], r["state"]) for r in versions] != [(1, "applied"), (2, "applied"), (3, "applied")]:
         raise RuntimeError("Drishti MariaDB migrations must finish before staff portal startup.")

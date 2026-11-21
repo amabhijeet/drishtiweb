@@ -50,6 +50,9 @@
     <p id="trim-feedback" role="status"></p>
   </form>
 </div>
+{% if survey %}
+<p>Survey processing {{ survey.status|capitalize }} · Recorded from {{ survey.recorded_from or 'unavailable' }} to {{ survey.last_recorded_at or 'unavailable' }} UTC</p>
+{% endif %}
 <h2>Detections ({{ detections|length }})</h2>
 <p>Device {{ job.device_id or 'unavailable' }} · Accepted {{ job.accepted_at or 'unavailable' }} · Processing started {{ job.processing_started_at or 'unavailable' }} · Processed {{ job.processed_at or 'unavailable' }}</p>
 <div class="video-recordings">
@@ -58,6 +61,19 @@
   <div><strong>{{ "%.3f"|format(detection.offset / 1000) }} s</strong><p>{{ detection.latitude }}, {{ detection.longitude }} · Confidence {{ "%.0f"|format(detection.confidence * 100) }}%</p></div>
   <div class="actions"><a href="{{ url_for('detection_image', detection_id=detection.id) }}">Annotated image</a>
   <a href="{{ url_for('segment', sid=job.id, kind='track', download=1) }}">Download GPX</a></div>
+  {% if can_verify %}
+  <form method="post" action="{{ url_for('review_detection', detection_id=detection.id) }}">
+    <input type="hidden" name="csrf" value="{{ session.csrf }}">
+    <label>Review status
+      <select name="review_status">
+        {% for status in ('pending','verified','rejected') %}
+        <option value="{{ status }}"{% if detection.review_status == status %} selected{% endif %}>{{ status|capitalize }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button>Save review</button>
+  </form>
+  {% else %}<p>Review {{ detection.review_status|capitalize }}</p>{% endif %}
 </article>
 {% else %}<p>No completed detections for this recording.</p>{% endfor %}
 </div>

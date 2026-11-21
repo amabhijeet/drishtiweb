@@ -25,6 +25,9 @@ def migrate(path):
         for table in TABLES:
             if target.execute(f"SELECT 1 FROM `{table}` LIMIT 1").fetchone():
                 raise ValueError(f"Destination table {table} already contains data.")
+        # Preserve review decisions from SQLite installations upgraded by the API.
+        if any(row[1] == "review_status" for row in source.execute("PRAGMA table_info(detections)")):
+            target.execute("ALTER TABLE detections ADD COLUMN IF NOT EXISTS review_status VARCHAR(16) NOT NULL DEFAULT 'pending'")
         for table in TABLES:
             if table not in existing:
                 continue

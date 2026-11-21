@@ -308,7 +308,7 @@ def video_library():
 
 @app.route("/admin/videos/<sid>", methods=["GET", "POST"])
 def video_workspace(sid):
-    job = db().execute("SELECT id,session,status,created,directory,video_path,device_id,accepted_at,processing_started_at,processed_at FROM segments WHERE id=?", (sid,)).fetchone()
+    job = db().execute("SELECT id,session,survey_id,status,created,directory,video_path,device_id,accepted_at,processing_started_at,processed_at FROM segments WHERE id=?", (sid,)).fetchone()
     if not job:
         abort(404)
     if request.method == "POST":
@@ -340,9 +340,32 @@ def video_workspace(sid):
         return redirect(url_for("video_workspace", sid=sid, _anchor=clip_id), code=303)
     clips = db().execute("SELECT * FROM web_video_clips WHERE segment_id=? ORDER BY created DESC,id DESC",
                         (sid,)).fetchall()
-    detections = db().execute("""SELECT id,latitude,longitude,confidence,`offset` FROM detections
+    detections = db().execute("""SELECT id,latitude,longitude,confidence,`offset`,review_status FROM detections
                                  WHERE segment=? ORDER BY `offset`,id""", (sid,)).fetchall() if job["status"] == "done" else []
-    return render_template("page.html", page="video_workspace", job=job, clips=clips, detections=detections)
+    survey = (db().execute("SELECT id,device_id,recorded_from,last_recorded_at,status FROM surveys WHERE id=?",
+                           (job["survey_id"],)).fetchone() if mysql_db.enabled() else None)
+    return render_template("page.html", page="video_workspace", job=job, clips=clips, detections=detections,
+                           survey=survey, can_verify=roles[session["user"]]["role"]=="reviewer")
+
+
+@app.post("/admin/detections/<detection_id>/review")
+def review_detection(detection_id):
+    if roles[session["user"]]["role"] != "reviewer":
+        abort(403)
+    status = request.form.get("review_status")
+    if status not in ("pending", "verified", "rejected"):
+        abort(400, "Unknown detection review status.")
+    with write_transaction() as conn:
+        query = """SELECT d.segment FROM detections d JOIN segments s ON s.id=d.segment
+                   WHERE d.id=? AND s.status='done'"""
+        row = conn.execute(query + (" FOR UPDATE" if mysql_db.enabled() else ""), (detection_id,)).fetchone()
+        if not row:
+            abort(404)
+        result = conn.execute("UPDATE detections SET review_status=? WHERE id=? AND review_status<>?",
+                              (status, detection_id, status))
+        if result.rowcount:
+            audit(detection_id, "Detection review: " + status)
+    return redirect(url_for("video_workspace", sid=row["segment"], _anchor=detection_id), code=303)
 
 
 @app.get("/admin/video-clips/<clip_id>/download")

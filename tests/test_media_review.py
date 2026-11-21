@@ -112,3 +112,25 @@ class ReviewTests(unittest.TestCase):
                 self.assertEqual(response.status_code,200)
                 self.assertEqual(response.data,contents)
         self.assertEqual(self.client.get("/admin/detections/unknown/image").status_code,404)
+
+    def test_detection_review_permissions_and_audit(self):
+        with sqlite3.connect(web.root/"drishti.sqlite3") as db:
+            db.executescript("""
+                CREATE TABLE segments(id TEXT PRIMARY KEY,status TEXT);
+                CREATE TABLE detections(id TEXT PRIMARY KEY,segment TEXT,review_status TEXT);
+                INSERT INTO segments VALUES('complete','done'),('unfinished','processing');
+                INSERT INTO detections VALUES('frame','complete','pending'),('other','unfinished','pending');
+            """)
+        url = "/admin/detections/frame/review"
+        data = {"csrf":"token", "review_status":"verified"}
+        self.assertEqual(self.client.post(url,data=data).status_code,403)
+        self.login("operator")
+        self.assertEqual(self.client.post(url,data=data).status_code,403)
+        self.login("reviewer")
+        self.assertEqual(self.client.post("/admin/detections/other/review",data=data).status_code,404)
+        self.assertEqual(self.client.post(url,data={**data, "review_status":"invented"}).status_code,400)
+        self.assertEqual(self.client.post(url,data=data).status_code,303)
+        self.assertEqual(self.client.post(url,data=data).status_code,303)
+        with sqlite3.connect(web.root/"drishti.sqlite3") as db:
+            self.assertEqual(db.execute("SELECT review_status FROM detections WHERE id='frame'").fetchone()[0],"verified")
+            self.assertEqual(db.execute("SELECT action FROM web_audit").fetchall(),[("Detection review: verified",)])
