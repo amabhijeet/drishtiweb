@@ -1,7 +1,5 @@
 {% if page == 'videos' %}
-<p><a href="{{ url_for('admin') }}">← Review workspace</a></p>
-<h1>Video library</h1>
-<p>Browse recordings accepted by the processing server. Processing status tracks inference progress.</p>
+<div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('admin') }}">WORKSPACE</a> / RECORDINGS</div><h1>Video library</h1><p>Find a survey, track processing and inspect road footage with linked detection evidence.</p></div><a class="button secondary" href="{{ url_for('admin') }}">← Dashboard</a></div>
 <div class="video-counts">
   {% for item in counts %}<a href="{{ url_for('video_library', status=item.status) }}"><strong>{{ item.count }}</strong> {{ item.status|capitalize }}</a>{% endfor %}
 </div>
@@ -15,30 +13,28 @@
 </form>
 <div class="video-recordings">
 {% for job in jobs %}
-  <article><div><strong>{{ job.id }}</strong><p><a href="{{ url_for('video_library', survey=job.session) }}">{{ job.session }}</a> · {{ job.created }} UTC · {{ job.status|capitalize }}</p></div>
-  <a href="{{ url_for('video_workspace', sid=job.id) }}">Open player →</a></article>
-{% else %}<p>No accepted recordings match these filters.</p>{% endfor %}
+  <article><div><strong>{{job.id}}</strong><p>Survey <a href="{{ url_for('video_library', survey=job.session) }}">{{job.session}}</a> · {{job.created}} UTC · <span class="status-pill {{job.status|lower}}">{{job.status|capitalize}}</span></p></div>
+  <a class="button secondary" href="{{ url_for('video_workspace', sid=job.id) }}">Inspect recording ↗</a></article>
+{% else %}<div class="empty"><strong>No matching recordings</strong><p>Try removing a status or survey filter, or upload the first video + GPX segment.</p></div>{% endfor %}
 </div>
 <nav aria-label="Video library pages">
 {% if page_number > 1 %}<a href="{{ url_for('video_library', p=page_number-1, **filters) }}">← Previous</a>{% endif %}
 {% if has_more %}<a href="{{ url_for('video_library', p=page_number+1, **filters) }}">Next →</a>{% endif %}
 </nav>
 {% else %}
-<p><a href="{{ url_for('video_library') }}">← Video library</a></p>
-<h1>Video editor</h1>
-<p class="video-id">{{ job.id }} · {{ job.status|capitalize }}</p>
+<div class="page-heading"><div><div class="eyebrow"><a href="{{ url_for('video_library') }}">VIDEO LIBRARY</a> / SEGMENT</div><h1>Recording workspace</h1><p class="video-id">{{job.id}}</p></div><span class="status-pill {{job.status|lower}}">{{job.status|capitalize}}</span></div>
 <div class="actions">
   <a href="{{ url_for('video_library', survey=job.session) }}">Survey {{ job.session }}</a>
   <a href="{{ url_for('segment', sid=job.id, kind='track') }}">GPS track</a>
   <a href="{{ url_for('segment', sid=job.id, kind='video', download=1) }}">Download original</a>
 </div>
 <div class="video-editor">
-  <div>
+  <div class="panel" style="margin:0">
     <video id="recording" controls playsinline preload="metadata" src="{{ url_for('segment', sid=job.id, kind='video') }}"></video>
     <p id="player-feedback" role="status" hidden></p>
   </div>
   <form method="post" id="trim-form">
-    <h2>Trim a clip</h2>
+    <h2>Clip editor</h2>
     <p>Save an edit and download it as an MP4. The original recording and GPS track are preserved.</p>
     <input type="hidden" name="csrf" value="{{ session.csrf }}">
     <label>Clip title<input name="title" required maxlength="100"></label>
@@ -53,12 +49,13 @@
 {% if survey %}
 <p>Survey processing {{ survey.status|capitalize }} · Recorded from {{ survey.recorded_from or 'unavailable' }} to {{ survey.last_recorded_at or 'unavailable' }} UTC</p>
 {% endif %}
-<h2>Detections ({{ detections|length }})</h2>
+<div class="section-heading" style="margin:38px 0 12px"><div><div class="eyebrow">AI EVIDENCE</div><h2>Detections ({{ detections|length }})</h2></div><span class="status-pill draft">Camera GPS positions are approximate</span></div>
 <p>Device {{ job.device_id or 'unavailable' }} · Accepted {{ job.accepted_at or 'unavailable' }} · Processing started {{ job.processing_started_at or 'unavailable' }} · Processed {{ job.processed_at or 'unavailable' }}</p>
 <div class="video-recordings">
 {% for detection in detections %}
-<article id="{{ detection.id }}">
-  <div><strong>{{ "%.3f"|format(detection.offset / 1000) }} s</strong><p>{{ detection.latitude }}, {{ detection.longitude }} · Confidence {{ "%.0f"|format(detection.confidence * 100) }}%</p></div>
+<article id="{{ detection.id }}"><div class="evidence-card">
+<a href="{{ url_for('detection_image', detection_id=detection.id) }}" aria-label="Open detection image at {{'%.3f'|format(detection.offset / 1000)}} seconds"><img src="{{ url_for('detection_image', detection_id=detection.id) }}" loading="lazy" alt="Annotated pothole detection"></a>
+<div><strong>At {{ "%.3f"|format(detection.offset / 1000) }} seconds</strong><p>{{ detection.latitude }}, {{ detection.longitude }}<br>Model confidence {{ "%.0f"|format(detection.confidence * 100) }}% <span class="status-pill {{detection.review_status}}">{{detection.review_status|capitalize}}</span></p><button type="button" class="btn-soft" data-seek="{{detection.offset / 1000}}">▶ Jump to frame</button></div></div>
   <div class="actions"><a href="{{ url_for('detection_image', detection_id=detection.id) }}">Annotated image</a>
   <a href="{{ url_for('segment', sid=job.id, kind='track', download=1) }}">Download GPX</a></div>
   {% if can_verify %}
@@ -75,7 +72,7 @@
   </form>
   {% else %}<p>Review {{ detection.review_status|capitalize }}</p>{% endif %}
 </article>
-{% else %}<p>No completed detections for this recording.</p>{% endfor %}
+{% else %}<div class="empty"><strong>No detections available</strong><p>Either this recording has not finished processing or no candidates met the model and GPS checks.</p></div>{% endfor %}
 </div>
 <h2>Saved clips</h2>
 <div class="video-recordings">
