@@ -44,3 +44,7 @@ ssh -N -L 8081:127.0.0.1:8081 YOUR_SSH_USER@YOUR_DROPLET_IP
 ```
 
 Log in as `drishti` using the application password. The database and phpMyAdmin bind to Droplet loopback. Back up MariaDB and the media volume together after cutover. Reverting to the old SQLite snapshot after accepting writes on MariaDB would omit those new writes.
+
+## Survey fields upgrade
+
+For an existing MariaDB deployment, back up the database, then start the updated FastAPI service before starting the updated staff portal or mobile rollout. The API adds the survey table, foreign key, index and segment columns on startup and backfills existing rows. Historical processing timestamps remain blank where no timestamp was recorded. For a SQLite-to-MariaDB import, the first API start after the import also backfills any older segments.

@@ -138,7 +138,10 @@ def details(rid):
     private = request.path.startswith("/admin")
     r = report(rid, not private)
     media = db().execute("SELECT id,kind,name FROM web_media WHERE report=? AND (? OR kind IN ('photo','video'))", (rid,private))
-    return render_template("page.html",page="detail",r=r,media=media,private=private)
+    detection = (db().execute("""SELECT d.id,d.segment FROM detections d JOIN segments s ON s.id=d.segment
+                              WHERE d.id=? AND d.segment=? AND s.status='done'""",
+                              (rid, r["source_id"])).fetchone() if private and r["source"] == "video" else None)
+    return render_template("page.html",page="detail",r=r,media=media,private=private,detection=detection)
 
 
 @app.get("/media/<mid>")
@@ -206,15 +209,16 @@ def sync():
             for item in batch["detections"]:
                 lat, lon = point(item["latitude"],item["longitude"])
                 source_id = item["segmentId"]
-                if item["source"] == "video":
-                    parent = conn.execute("SELECT metadata FROM segments WHERE id=?",(source_id,)).fetchone()
-                else:
-                    parent = conn.execute("SELECT metadata FROM images WHERE id=?",(source_id,)).fetchone()
-                meta = json.loads(parent["metadata"]) if parent else {}
+                captured = item.get("capturedAt")
+                if not captured:
+                    table = "segments" if item["source"] == "video" else "images"
+                    parent = conn.execute(f"SELECT metadata FROM {table} WHERE id=?", (source_id,)).fetchone()
+                    meta = json.loads(parent["metadata"]) if parent else {}
+                    captured = meta.get("timestamp") or meta.get("startedAt")
                 insert = "INSERT INTO" if mysql_db.enabled() else "INSERT OR IGNORE INTO"
                 duplicate = " ON DUPLICATE KEY UPDATE id=VALUES(id)" if mysql_db.enabled() else ""
                 conn.execute(insert + """ web_reports(id,source,source_id,original_lat,original_lon,lat,lon,confidence,evidence,captured)
-                    VALUES(?,?,?,?,?,?,?,?,?,?)""" + duplicate,(item["id"],item["source"],source_id,lat,lon,lat,lon,item["confidence"],urlsplit(item["imageUrl"]).path,meta.get("timestamp") or meta.get("startedAt")))
+                    VALUES(?,?,?,?,?,?,?,?,?,?)""" + duplicate,(item["id"],item["source"],source_id,lat,lon,lat,lon,item["confidence"],urlsplit(item["imageUrl"]).path,captured))
             offset += len(batch["detections"])
             if offset >= batch["total"] or not batch["detections"]:
                 break
@@ -240,14 +244,26 @@ def evidence(rid):
 
 @app.get("/admin/segments/<sid>/<kind>")
 def segment(sid,kind):
-    row = db().execute("SELECT directory FROM segments WHERE id=?",(sid,)).fetchone()
+    row = db().execute("SELECT directory,video_path,gpx_path FROM segments WHERE id=?",(sid,)).fetchone()
     if not row or kind not in ("video","track"):
         abort(404)
-    path = safe_path("uploads",Path(row["directory"])/("video.mp4" if kind=="video" else "track.gpx"))
+    filename = "video.mp4" if kind == "video" else "track.gpx"
+    path = safe_path("uploads", row["video_path" if kind == "video" else "gpx_path"] or Path(row["directory"]) / filename)
     if kind=="track":
+        if request.args.get("download") == "1":
+            return send_file(path, mimetype="application/gpx+xml", as_attachment=True, download_name="track.gpx")
         points,warnings=read_track(path.read_bytes())
         return render_template("page.html",page="track",points=points,warnings=warnings)
     return send_file(path,mimetype="video/mp4",conditional=True,as_attachment=request.args.get("download")=="1")
+
+
+@app.get("/admin/detections/<detection_id>/image")
+def detection_image(detection_id):
+    row = db().execute("""SELECT d.image FROM detections d JOIN segments s ON s.id=d.segment
+                          WHERE d.id=? AND s.status='done'""", (detection_id,)).fetchone()
+    if not row:
+        abort(404)
+    return send_file(safe_path("instances", row["image"]), mimetype="image/jpeg")
 
 
 @app.get("/admin/videos")
@@ -275,7 +291,7 @@ def video_library():
 
 @app.route("/admin/videos/<sid>", methods=["GET", "POST"])
 def video_workspace(sid):
-    job = db().execute("SELECT id,session,status,created,directory FROM segments WHERE id=?", (sid,)).fetchone()
+    job = db().execute("SELECT id,session,status,created,directory,video_path,device_id,accepted_at,processing_started_at,processed_at FROM segments WHERE id=?", (sid,)).fetchone()
     if not job:
         abort(404)
     if request.method == "POST":
@@ -286,7 +302,7 @@ def video_workspace(sid):
             abort(400, "Enter numeric trim times.")
         if not title or len(title) > 100 or not (math.isfinite(start) and math.isfinite(end) and 0 <= start < end):
             abort(400, "Enter a clip title and a valid start and end time.")
-        path = safe_path("uploads", Path(job["directory"]) / "video.mp4")
+        path = safe_path("uploads", job["video_path"] or Path(job["directory"]) / "video.mp4")
         try:
             with av.open(str(path)) as container:
                 stream = container.streams.video[0]
@@ -307,17 +323,19 @@ def video_workspace(sid):
         return redirect(url_for("video_workspace", sid=sid, _anchor=clip_id), code=303)
     clips = db().execute("SELECT * FROM web_video_clips WHERE segment_id=? ORDER BY created DESC,id DESC",
                         (sid,)).fetchall()
-    return render_template("page.html", page="video_workspace", job=job, clips=clips)
+    detections = db().execute("""SELECT id,latitude,longitude,confidence,`offset` FROM detections
+                                 WHERE segment=? ORDER BY `offset`,id""", (sid,)).fetchall() if job["status"] == "done" else []
+    return render_template("page.html", page="video_workspace", job=job, clips=clips, detections=detections)
 
 
 @app.get("/admin/video-clips/<clip_id>/download")
 def export_clip(clip_id):
     clip = db().execute("""
-        SELECT c.*, s.directory FROM web_video_clips c JOIN segments s ON s.id=c.segment_id WHERE c.id=?
+        SELECT c.*, s.directory,s.video_path FROM web_video_clips c JOIN segments s ON s.id=c.segment_id WHERE c.id=?
     """, (clip_id,)).fetchone()
     if not clip:
         abort(404)
-    source = safe_path("uploads", Path(clip["directory"]) / "video.mp4")
+    source = safe_path("uploads", clip["video_path"] or Path(clip["directory"]) / "video.mp4")
     with tempfile.TemporaryDirectory(prefix="drishti-clip-") as temp:
         output = Path(temp) / "clip.mp4"
         try:

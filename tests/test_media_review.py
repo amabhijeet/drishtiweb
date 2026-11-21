@@ -78,3 +78,37 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(self.client.get("/media/vid",headers={"Range":"bytes=999999-"}).status_code,416)
         self.assertEqual(self.client.head("/media/vid").headers["Content-Length"],str(len(payload)))
         self.assertEqual(self.client.get("/media/vid").data,payload)
+
+    def test_detection_links_and_private_originals(self):
+        with sqlite3.connect(web.root/"drishti.sqlite3") as db:
+            db.executescript("""
+                CREATE TABLE segments(id TEXT PRIMARY KEY,directory TEXT,video_path TEXT,gpx_path TEXT,status TEXT);
+                CREATE TABLE detections(id TEXT PRIMARY KEY,segment TEXT,image TEXT);
+                INSERT INTO segments VALUES('source','legacy','original/video.mp4','original/track.gpx','done');
+                INSERT INTO detections VALUES('r','source','frame.jpg');
+                UPDATE web_reports SET source='video',source_id='source',status='Published' WHERE id='r';
+            """)
+        media = web.root/"uploads"/"original"
+        media.mkdir(parents=True)
+        (media/"video.mp4").write_bytes(b"video")
+        (media/"track.gpx").write_bytes(b"<gpx/>")
+        (web.root/"instances").mkdir()
+        (web.root/"instances"/"frame.jpg").write_bytes(b"annotated")
+        assets = {
+            "/admin/segments/source/video?download=1": b"video",
+            "/admin/segments/source/track?download=1": b"<gpx/>",
+            "/admin/detections/r/image": b"annotated",
+        }
+        for url in assets:
+            self.assertEqual(self.client.get(url).status_code,302)
+        self.assertNotIn(b'/admin/detections/r/image', self.client.get("/reports/r").data)
+        self.login("reviewer")
+        details = self.client.get("/admin/reports/r").data
+        self.assertIn(b'/admin/videos/source#r', details)
+        self.assertIn(b'/admin/segments/source/track?download=1', details)
+        self.assertIn(b'/admin/detections/r/image', details)
+        for url, contents in assets.items():
+            with self.client.get(url) as response:
+                self.assertEqual(response.status_code,200)
+                self.assertEqual(response.data,contents)
+        self.assertEqual(self.client.get("/admin/detections/unknown/image").status_code,404)

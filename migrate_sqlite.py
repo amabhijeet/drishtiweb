@@ -6,7 +6,7 @@ from pathlib import Path
 
 from mysql_db import Connection
 
-TABLES = ("segments", "images", "detections", "web_reports", "web_media", "web_video_clips", "web_audit")
+TABLES = ("surveys", "segments", "images", "detections", "web_reports", "web_media", "web_video_clips", "web_audit")
 
 
 def migrate(path):

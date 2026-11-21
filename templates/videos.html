@@ -50,6 +50,17 @@
     <p id="trim-feedback" role="status"></p>
   </form>
 </div>
+<h2>Detections ({{ detections|length }})</h2>
+<p>Device {{ job.device_id or 'unavailable' }} · Accepted {{ job.accepted_at or 'unavailable' }} · Processing started {{ job.processing_started_at or 'unavailable' }} · Processed {{ job.processed_at or 'unavailable' }}</p>
+<div class="video-recordings">
+{% for detection in detections %}
+<article id="{{ detection.id }}">
+  <div><strong>{{ "%.3f"|format(detection.offset / 1000) }} s</strong><p>{{ detection.latitude }}, {{ detection.longitude }} · Confidence {{ "%.0f"|format(detection.confidence * 100) }}%</p></div>
+  <div class="actions"><a href="{{ url_for('detection_image', detection_id=detection.id) }}">Annotated image</a>
+  <a href="{{ url_for('segment', sid=job.id, kind='track', download=1) }}">Download GPX</a></div>
+</article>
+{% else %}<p>No completed detections for this recording.</p>{% endfor %}
+</div>
 <h2>Saved clips</h2>
 <div class="video-recordings">
 {% for clip in clips %}
