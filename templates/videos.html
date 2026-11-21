@@ -14,7 +14,7 @@
 <div class="video-recordings">
 {% for job in jobs %}
   <article><div><strong>{{job.id}}</strong><p>Survey <a href="{{ url_for('video_library', survey=job.session) }}">{{job.session}}</a> · {{job.created}} UTC · <span class="status-pill {{job.status|lower}}">{{job.status|capitalize}}</span></p></div>
-  <a class="button secondary" href="{{ url_for('video_workspace', sid=job.id) }}">Inspect recording ↗</a></article>
+  <a class="button secondary" href="{{ url_for('video_workspace', sid=job.id) }}">Open player →</a></article>
 {% else %}<div class="empty"><strong>No matching recordings</strong><p>Try removing a status or survey filter, or upload the first video + GPX segment.</p></div>{% endfor %}
 </div>
 <nav aria-label="Video library pages">
