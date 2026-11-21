@@ -25,6 +25,28 @@ gunicorn --workers 2 --threads 4 --timeout 240 --bind 127.0.0.1:11000 app:app
 
 Use a separate HTTPS hostname with Caddy reverse_proxy 127.0.0.1:11000. Run Gunicorn under a service supervisor. Keep the capture API private. Configure ingress login throttling and upload limits. Session cookies require HTTPS. Node.js is required during installation to bundle Leaflet. Public OSM tiles require internet connectivity. Configure a licensed tile service for sustained traffic.
 
+## Portal redesign and localhost preview
+
+The public overview, published-report map, and staff workspace now share a responsive visual system. Staff pages include dashboard metrics, recent observations, a review queue, video library, player, GPS track download, AI evidence, and review controls. Only reports explicitly published by reviewers appear in the public explorer. Source MP4 and GPX files are not public.
+
+To inspect the Flask staff workspace **without entering a password during local development**, use a disposable, SQLite-backed environment on your own computer:
+
+```sh
+export DRISHTI_ENV=development
+export DRISHTI_LOCAL_NO_AUTH=1
+export DRISHTI_DATA_DIR=/absolute/path/to/local/drishti-data
+unset DRISHTI_DATABASE_URL
+mkdir -p "$DRISHTI_DATA_DIR"
+# Initialize the backend's SQLite tables first, using the backend checkout.
+# Initialize the portal's SQLite report tables:
+python -m flask --app app init
+python -m flask --app app run --host 127.0.0.1 --port 11000
+```
+
+Open `http://127.0.0.1:11000/admin`. Preview mode assigns a local reviewer for interactive testing, without a password prompt. It is refused unless `DRISHTI_ENV=development`, the shared MariaDB URL is absent, and both the HTTP host and client are loopback. **Never use this flag on the Droplet, behind Caddy, or with production data.** Do not expose the local preview with a tunnel. Normal operation still requires `WEB_USERS`, `WEB_SECRET`, HTTPS and staff authentication.
+
+The Vercel build (`node build-vercel.cjs`) generates four polished **static preview pages** with empty/offline observations. It does not host Flask routes or connect to live MariaDB. The public map becomes live only when Flask is hosted alongside the processing server. Keep production access controls in place when deploying.
+
 ## Workflow and routes
 Public routes are /, /map, /reports/ID, /docs and authorized report attachments at /media/ID. Staff sign in at /login, upload on /admin, import current observations, and inspect source imagery and survey footage. The web app calls GET /v1/map and POST /v1/detect and /v1/segments. Video preview and GPX inspection read the existing local store. Web tables hold editorial decisions, selected media and an audit log within the shared database. /admin/reports/ID supports draft, reject, archive and publish. Public media must be manually sanitized before attaching. Public video containers may contain audio or metadata. Originals stay private. Print a report to save PDF.
 

@@ -42,3 +42,18 @@ document.querySelector('#preview-trim').addEventListener('click', () => preview(
 for (const button of document.querySelectorAll('[data-start]')) {
   button.addEventListener('click', () => preview(Number(button.dataset.start), Number(button.dataset.end)));
 }
+
+for (const button of document.querySelectorAll('[data-seek]')) {
+  button.addEventListener('click', () => {
+    const target = Number(button.dataset.seek);
+    if (!Number.isFinite(target) || target < 0) return;
+    clipEnd = null;
+    const seek = () => {
+      recording.currentTime = Math.min(target, recording.duration || target);
+      recording.scrollIntoView({behavior:'smooth', block:'center'});
+      recording.focus({preventScroll:true});
+    };
+    if (recording.readyState < 1) recording.addEventListener('loadedmetadata', seek, {once:true});
+    else seek();
+  });
+}
