@@ -1,0 +1,13 @@
+{
+  "framework": null,
+  "installCommand": "npm ci",
+  "buildCommand": "node build-vercel.cjs",
+  "outputDirectory": "public",
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/admin/:path*",
+      "destination": "/login"
+    }
+  ]
+}

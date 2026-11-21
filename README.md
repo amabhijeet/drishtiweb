@@ -44,3 +44,6 @@ DRISHTI_CHECKOUT=../drishti bash tests/run-integration.sh
 ```
 
 Set API_PYTHON to the backend interpreter and TEST_CHECKPOINT to a compatible local YOLO checkpoint when required. CHROMIUM_PATH optionally selects a Chromium executable. The browser suite checks public routes, staff login, gallery, map navigation, GPS views, authenticated video downloads and playback. Three synthetic cameras send distinct one-second MP4 segments concurrently, with an additional identical retry. The assertions check completed jobs, byte-for-byte source identity and simultaneous playback. The production backend processes the accepted jobs serially with one model worker. Measure full-resolution capacity on the target Droplet.
+
+## Vercel public site
+Vercel builds the overview, map shell, documentation and workspace availability page into public/. This deployment works on the assigned vercel.app domain without credentials. It displays a disconnected state until a persistent survey service is integrated. Use the Droplet installation above for authenticated operations and live reports. Local preview: run npm ci, install Jinja2 (included with Flask), run python build_public.py to refresh the checked-in HTML, run node build-vercel.cjs and serve the public directory with a clean-URL static server.

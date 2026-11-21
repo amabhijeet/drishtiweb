@@ -2,3 +2,4 @@
 node_modules/
 static/vendor/
 __pycache__/
+public/
