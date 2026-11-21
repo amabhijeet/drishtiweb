@@ -109,7 +109,8 @@ def audit(report, action):
 def protect():
     if LOCAL_PREVIEW and request.path.startswith(("/admin", "/login")):
         # Remote access remains forbidden even when someone opts in to demo mode.
-        if request.remote_addr not in ("127.0.0.1", "::1"):
+        if (request.remote_addr not in ("127.0.0.1", "::1") or
+            request.host.split(":")[0] not in ("127.0.0.1", "localhost", "[::1]")):
             abort(403)
         session["user"] = "local-reviewer"
     session.setdefault("csrf", secrets.token_urlsafe(32))
