@@ -81,7 +81,7 @@ def main():
             if time.monotonic() >= deadline:
                 raise AssertionError("Three accepted recordings did not finish processing")
             time.sleep(0.25)
-        for width in (390,1440):
+        for width in (390,768,1440):
             page.set_viewport_size({"width":width,"height":850})
             for route in ("/admin","/admin/gps","/admin/segments/"+prefix+"-0/track"):
                 assert page.goto(base+route,wait_until="domcontentloaded").ok
@@ -94,6 +94,9 @@ def main():
             assert context.request.get(url+"/video?download=1").body()==clips[i]
             assert context.request.get(url+"/track").ok
         library = base + "/admin/videos"
+        assert page.goto(library + "?q=unmatched-" + prefix, wait_until="domcontentloaded").ok
+        assert page.get_by_text("No matching recordings", exact=True).is_visible()
+        assert page.request.get(library + "/missing-" + prefix).status == 404
         assert page.goto(library + "?status=done&survey=" + prefix + "-camera-0",wait_until="domcontentloaded").ok
         assert page.locator(".video-recordings article").count() == 1, page.locator("main").inner_text()
         page.locator(".video-recordings a[href*='/admin/videos/']").click()

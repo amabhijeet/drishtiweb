@@ -30,15 +30,20 @@ import os
 with sqlite3.connect(Path(os.environ['DRISHTI_DATA_DIR'])/'drishti.sqlite3') as db:
     db.executescript('''
         CREATE TABLE segments (id TEXT PRIMARY KEY);
-        CREATE TABLE web_reports (id TEXT PRIMARY KEY, status TEXT);
-        CREATE TABLE web_audit (id INTEGER PRIMARY KEY, at TEXT, actor TEXT, report TEXT, action TEXT);
     ''')
 import app
+assert app.app.test_cli_runner().invoke(args=['init']).exit_code == 0
 client = app.app.test_client()
 assert client.get('/login', base_url='http://127.0.0.1:11000').status_code == 302
 assert client.get('/admin', base_url='http://127.0.0.1:11000').status_code == 200
 assert client.get('/admin', base_url='http://127.0.0.1:11000', environ_overrides={'REMOTE_ADDR':'203.0.113.4'}).status_code == 403
 assert client.get('/admin', base_url='http://public.example').status_code == 403
+assert client.get('/media/private', base_url='http://127.0.0.1:11000',
+                  environ_overrides={'REMOTE_ADDR':'203.0.113.4'}).status_code == 403
+assert client.get('/media/private', base_url='http://127.0.0.1:11000',
+                  headers={'X-Forwarded-For':'203.0.113.4'}).status_code == 403
+assert client.get('/admin', base_url='http://[::1]:11000',
+                  environ_overrides={'REMOTE_ADDR':'::1'}).status_code == 200
 """)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

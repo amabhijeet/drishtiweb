@@ -134,3 +134,9 @@ class ReviewTests(unittest.TestCase):
         with sqlite3.connect(web.root/"drishti.sqlite3") as db:
             self.assertEqual(db.execute("SELECT review_status FROM detections WHERE id='frame'").fetchone()[0],"verified")
             self.assertEqual(db.execute("SELECT action FROM web_audit").fetchall(),[("Detection review: verified",)])
+
+        self.assertEqual(self.client.post(url,data={**data, "review_status":"rejected"}).status_code,303)
+        with sqlite3.connect(web.root/"drishti.sqlite3") as db:
+            self.assertEqual(db.execute("SELECT review_status FROM detections WHERE id='frame'").fetchone()[0],"rejected")
+            self.assertEqual(db.execute("SELECT action FROM web_audit ORDER BY id").fetchall(),
+                             [("Detection review: verified",),("Detection review: rejected",)])

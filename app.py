@@ -107,12 +107,17 @@ def audit(report, action):
 
 @app.before_request
 def protect():
-    if LOCAL_PREVIEW and request.path.startswith(("/admin", "/login")):
-        # Remote access remains forbidden even when someone opts in to demo mode.
+    if LOCAL_PREVIEW:
+        # The preview session also authorizes private attachments under /media.
+        authority = request.host
+        host = authority.partition("]")[0] + "]" if authority.startswith("[") else authority.split(":")[0]
+        forwarded = any(key.lower() == "forwarded" or key.lower().startswith("x-forwarded-")
+                        for key in request.headers.keys())
         if (request.remote_addr not in ("127.0.0.1", "::1") or
-            request.host.split(":")[0] not in ("127.0.0.1", "localhost", "[::1]")):
+                host not in ("127.0.0.1", "localhost", "[::1]") or forwarded):
             abort(403)
-        session["user"] = "local-reviewer"
+        if request.path.startswith(("/admin", "/login")):
+            session["user"] = "local-reviewer"
     session.setdefault("csrf", secrets.token_urlsafe(32))
     if request.method == "POST" and not hmac.compare_digest(session["csrf"], request.form.get("csrf", "")):
         abort(403)
