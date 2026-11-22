@@ -1,5 +1,7 @@
 # AI Agent Instructions — Drishti Web
 
+**File ownership lookup:** [FILE_MAP.md](FILE_MAP.md) for every web/admin route and template, and [backend/mobile file map](https://github.com/amabhijeet/drishti/blob/main/docs/FILE_MAP.md) for the sibling repository.
+
 **Read the canonical, self-contained architecture reference first:** [Drishti System Architecture](https://github.com/amabhijeet/drishti/blob/main/docs/ARCHITECTURE.md).
 
 The architecture spans **two repos**: `amabhijeet/drishti` contains React Native, FastAPI, YOLO, migrations and Docker; this repo `amabhijeet/drishtiweb` contains the Flask public and government staff portal.
