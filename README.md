@@ -1,6 +1,8 @@
 # Drishti Web
 Public road observation register and private staff workspace. Deploy beside the Drishti FastAPI service on its Droplet. Flask renders the interface and Leaflet clusters published locations. Flask was chosen to reuse the Python media stack and access the shared database and local evidence volume. The mobile API remains unchanged.
 
+**Codebase navigation:** [File-by-file map](FILE_MAP.md) — Flask routes, templates, public/admin UX, data access, tests and deployment files. The [mobile/backend map](https://github.com/amabhijeet/drishti/blob/main/docs/FILE_MAP.md) covers the sibling repository.
+
 ## Install
 Use Python 3.11+ on the host. Create a virtual environment, install requirements, and configure the following in a protected service environment file. Generate WEB_SECRET with Python secrets.token_hex(32). Generate each password hash with werkzeug.security.generate_password_hash using a password prompted via getpass.
 
