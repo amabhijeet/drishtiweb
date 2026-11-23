@@ -9,7 +9,11 @@ search?.addEventListener('input', () => {
 const canvas = document.querySelector('#map');
 if (canvas && window.L) {
   const map = L.map(canvas).setView([24,82], 5);
-  L.tileLayer(canvas.dataset.tiles || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'}).addTo(map);
+  L.tileLayer(canvas.dataset.tiles || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // OSM requires a referrer. Send only the site origin on tile requests.
+    referrerPolicy: 'strict-origin',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+  }).addTo(map);
   const markers = document.querySelector('#markers');
   if (markers) {
     const rows = JSON.parse(markers.textContent);
