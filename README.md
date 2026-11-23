@@ -27,46 +27,6 @@ gunicorn --workers 2 --threads 4 --timeout 240 --bind 127.0.0.1:11000 app:app
 
 Use a separate HTTPS hostname with Caddy reverse_proxy 127.0.0.1:11000. Run Gunicorn under a service supervisor. Keep the capture API private. Configure ingress login throttling and upload limits. Session cookies require HTTPS. Node.js is required during installation to bundle Leaflet. Public OSM tiles require internet connectivity. Configure a licensed tile service for sustained traffic.
 
-### Staff access through SSH
-
-On the Droplet, the staff workspace can use SSH authentication in place of the portal login form. The public site keeps serving published reports. Its workspace link and login page are disabled in this mode. Anyone authorized to forward to the private listener shares the reviewer identity in the audit log.
-
-On the Droplet, verify Gunicorn is bound to `127.0.0.1:11000`. Generate a dedicated token file as root, once. Keep it out of Git and the public Caddyfile.
-
-```bash
-test -s /etc/drishti/staff-tunnel.env || (
-  umask 077
-  printf 'DRISHTI_STAFF_TUNNEL_TOKEN=%s\n' "$(openssl rand -hex 32)" > /etc/drishti/staff-tunnel.env
-)
-for service in caddy drishtiweb; do
-  install -d "/etc/systemd/system/$service.service.d"
-  printf '[Service]\nEnvironmentFile=/etc/drishti/staff-tunnel.env\n' \
-    > "/etc/systemd/system/$service.service.d/staff-tunnel.conf"
-done
-```
-
-Append this site block to `/etc/caddy/Caddyfile`, keeping the existing sites. In the existing **public** Flask `reverse_proxy` block, add `header_up -X-Drishti-Staff-Tunnel` so client-supplied values are discarded.
-
-```caddyfile
-http://127.0.0.1:11001 {
-    bind 127.0.0.1
-    reverse_proxy 127.0.0.1:11000 {
-        header_up X-Drishti-Staff-Tunnel {$DRISHTI_STAFF_TUNNEL_TOKEN}
-    }
-}
-```
-
-```bash
-systemd-run --wait --pipe --collect \
-  -p EnvironmentFile=/etc/drishti/staff-tunnel.env \
-  /usr/bin/caddy validate --config /etc/caddy/Caddyfile &&
-systemctl daemon-reload &&
-systemctl restart drishtiweb caddy &&
-systemctl is-active drishtiweb caddy
-```
-
-From your PC, open an SSH tunnel with `ssh -NT -L 127.0.0.1:11001:127.0.0.1:11001 root@DROPLET_IP`, using your existing SSH account. Keep the terminal open and visit `http://127.0.0.1:11001/admin`. Verify the public site's `/admin` and `/login` both return 404. Never route the loopback listener through a public site or firewall rule.
-
 ## Portal redesign and localhost preview
 
 The public overview, published-report map, and staff workspace now share a responsive visual system. Staff pages include dashboard metrics, recent observations, a review queue, video library, player, GPS track download, AI evidence, and review controls. Only reports explicitly published by reviewers appear in the public explorer. Source MP4 and GPX files are not public.
