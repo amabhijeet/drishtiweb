@@ -23,8 +23,12 @@ import mysql_db
 from gps import point, distance, validate, read_track, photo_gps
 
 app = Flask(__name__)
-# Password-free access is ONLY for an explicitly opted-in localhost development preview.
 LOCAL_PREVIEW = os.getenv("DRISHTI_LOCAL_NO_AUTH") == "1"
+STAFF_TUNNEL_TOKEN = os.getenv("DRISHTI_STAFF_TUNNEL_TOKEN", "")
+STAFF_TUNNEL = bool(STAFF_TUNNEL_TOKEN)
+if STAFF_TUNNEL and (LOCAL_PREVIEW or len(STAFF_TUNNEL_TOKEN) != 64 or
+                     any(c not in "0123456789abcdef" for c in STAFF_TUNNEL_TOKEN)):
+    raise RuntimeError("Staff tunnel access requires a 32-byte hex token and preview disabled.")
 if LOCAL_PREVIEW and os.getenv("DRISHTI_ENV") != "development":
     raise RuntimeError("Password-free preview requires DRISHTI_ENV=development.")
 if LOCAL_PREVIEW and os.getenv("DRISHTI_DATABASE_URL"):
@@ -39,11 +43,13 @@ app.config.update(SECRET_KEY=_secret, SESSION_COOKIE_SECURE=not LOCAL_PREVIEW,
                   MAX_CONTENT_LENGTH=520*1024**2)
 root = Path(os.environ["DRISHTI_DATA_DIR"]).resolve()
 origin = os.environ.get("DRISHTI_API", "http://127.0.0.1:10000").rstrip("/")
-roles = json.loads(os.getenv("WEB_USERS", "{}" if LOCAL_PREVIEW else "null"))
+roles = {} if STAFF_TUNNEL else json.loads(os.getenv("WEB_USERS", "{}" if LOCAL_PREVIEW else "null"))
 if not isinstance(roles, dict):
     raise RuntimeError("WEB_USERS must be configured.")
 if LOCAL_PREVIEW:
     roles["local-reviewer"] = {"role": "reviewer"}
+if STAFF_TUNNEL:
+    roles["ssh-reviewer"] = {"role": "reviewer"}
 tolerance = float(os.getenv("GPS_TOLERANCE_M", "25"))
 if not 0 < tolerance <= 1000:
     raise ValueError("GPS_TOLERANCE_M must be within (0, 1000]")
@@ -107,6 +113,18 @@ def audit(report, action):
 
 @app.before_request
 def protect():
+    if STAFF_TUNNEL:
+        token = request.headers.get("X-Drishti-Staff-Tunnel", "").encode()
+        g.staff_tunnel = (
+            request.remote_addr == "127.0.0.1"
+            and request.host.partition(":")[0] == "127.0.0.1"
+            and hmac.compare_digest(token, STAFF_TUNNEL_TOKEN.encode())
+        )
+        session.pop("user", None)
+        if g.staff_tunnel:
+            session["user"] = "ssh-reviewer"
+        elif request.path.startswith(("/admin", "/login")):
+            abort(404)
     if LOCAL_PREVIEW:
         # The preview session also authorizes private attachments under /media.
         authority = request.host
@@ -132,9 +150,14 @@ def headers(response):
     return response
 
 
+@app.context_processor
+def staff_navigation():
+    return {"show_workspace": not STAFF_TUNNEL or getattr(g, "staff_tunnel", False)}
+
+
 @app.route("/login", methods=["GET","POST"])
 def login():
-    if LOCAL_PREVIEW:
+    if LOCAL_PREVIEW or STAFF_TUNNEL:
         return redirect("/admin")
     if request.method == "POST":
         user = request.form.get("user","")

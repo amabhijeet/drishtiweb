@@ -3,7 +3,9 @@ import os
 import sqlite3
 import tempfile
 import unittest
+import importlib
 from pathlib import Path
+from unittest.mock import patch
 from gps import point, distance, validate, read_track
 from werkzeug.security import generate_password_hash
 import json
@@ -13,6 +15,30 @@ os.environ.update(WEB_SECRET="test-only",DRISHTI_DATA_DIR=temp.name,WEB_USERS=js
 from app import app, schema
 
 class WebTests(unittest.TestCase):
+    def test_staff_tunnel(self):
+        import app as portal
+        token = "a" * 64
+        with patch.dict(os.environ, {"DRISHTI_STAFF_TUNNEL_TOKEN": token}):
+            importlib.reload(portal)
+            self.addCleanup(importlib.reload, portal)
+            with sqlite3.connect(Path(temp.name) / "drishti.sqlite3") as db:
+                db.executescript(portal.schema)
+                db.execute("CREATE TABLE IF NOT EXISTS segments(id TEXT)")
+                db.execute("INSERT INTO web_reports(id,status) VALUES('tunnel-draft','Draft')")
+                db.execute("INSERT INTO web_media VALUES('tunnel-photo','tunnel-draft','photo','test.jpg',X'0102')")
+            c = portal.app.test_client()
+            origin = "http://127.0.0.1:11001"
+            header = {"X-Drishti-Staff-Tunnel": token}
+            self.assertEqual(c.get("/admin/reports/tunnel-draft", base_url=origin, headers=header).status_code, 200)
+            self.assertEqual(c.get("/media/tunnel-photo", base_url=origin, headers=header).data, b"\x01\x02")
+            self.assertEqual(c.get("/media/tunnel-photo", base_url=origin).status_code, 404)
+            self.assertEqual(c.get("/admin", base_url=origin).status_code, 404)
+            self.assertEqual(c.get("/login", base_url=origin).status_code, 404)
+            self.assertEqual(c.get("/login", base_url=origin, headers=header).location, "/admin")
+            self.assertEqual(c.post("/admin/sync", base_url=origin, headers=header).status_code, 403)
+            self.assertEqual(c.get("/admin", base_url="https://public.invalid", headers=header).status_code, 404)
+            self.assertEqual(c.get("/admin", base_url=origin, headers=header,
+                                   environ_overrides={"REMOTE_ADDR": "10.0.0.1"}).status_code, 404)
     def test_gps(self):
         self.assertAlmostEqual(distance((0,0),(0,1)),111195,delta=5)
         for bad in [(91,0),(0,181),(float("nan"),0)]:
