@@ -47,7 +47,11 @@ def main():
               return v.videoWidth;
             }))""")
             assert ok==[160,160],ok
-        page.goto(base+"/admin")
+        page.goto(base+"/")
+        page.get_by_role("link",name="Open workspace").click()
+        assert page.url.endswith("/admin")
+        assert page.get_by_role("heading",name="Operations overview").is_visible()
+        page.goto(base+"/admin/videos")
         assert page.url.endswith("/login")
         page.locator('[name=user]').fill(os.environ["TEST_USER"])
         page.locator('[name=password]').fill(os.environ["TEST_PASSWORD"])

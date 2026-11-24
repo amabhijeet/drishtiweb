@@ -26,13 +26,17 @@ class WebTests(unittest.TestCase):
     def test_public_boundary(self):
         with sqlite3.connect(Path(temp.name)/"drishti.sqlite3") as db:
             db.executescript(schema)
+            db.execute("CREATE TABLE IF NOT EXISTS segments(id TEXT PRIMARY KEY)")
             db.execute("INSERT INTO web_reports(id,status) VALUES('private-id','Draft')")
         c=app.test_client()
         for path in ["/","/map","/docs","/login"]:
             self.assertEqual(c.get(path).status_code,200)
         self.assertEqual(c.get('/reports/private-id').status_code,404)
         self.assertNotIn(b'private-id',c.get('/map').data)
-        self.assertEqual(c.get('/admin').status_code,302)
+        overview = c.get('/admin')
+        self.assertEqual(overview.status_code, 200)
+        self.assertIn(b'<h1>Operations overview</h1>', overview.data)
+        self.assertEqual(c.get('/admin/videos').location, '/login')
         self.assertEqual(c.post('/admin/sync').status_code,403)
 
 if __name__=='__main__': unittest.main()

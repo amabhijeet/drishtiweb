@@ -121,6 +121,8 @@ def protect():
     session.setdefault("csrf", secrets.token_urlsafe(32))
     if request.method == "POST" and not hmac.compare_digest(session["csrf"], request.form.get("csrf", "")):
         abort(403)
+    if request.endpoint == "admin" and request.method in ("GET", "HEAD"):
+        return
     if request.path.startswith("/admin") and session.get("user") not in roles:
         return redirect("/login")
 
