@@ -100,7 +100,7 @@ class ReviewTests(unittest.TestCase):
             "/admin/detections/r/image": b"annotated",
         }
         for url in assets:
-            self.assertEqual(self.client.get(url).status_code,403)
+            self.assertEqual(self.client.get(url).status_code,302)
         self.assertNotIn(b'/admin/detections/r/image', self.client.get("/reports/r").data)
         self.login("reviewer")
         details = self.client.get("/admin/reports/r").data

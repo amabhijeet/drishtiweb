@@ -1,12 +1,26 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Drishti · Road observation register</title>{% if session is defined %}<meta name="csrf-token" content="{{session.csrf}}">{% endif %}<link rel="stylesheet" href="/static/site.css"><link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.Default.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.css"></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Drishti · Road observation register</title><link rel="stylesheet" href="/static/site.css"><link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.Default.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.css"></head><body>
 <header>
 <a class="brand" href="/"><span class="brand-mark">◈</span> DRISHTI <span style="font-size:.63rem;letter-spacing:.14em;color:#8da0b5;font-weight:800;margin-left:5px">ROAD INTELLIGENCE</span></a>
-<nav aria-label="Primary navigation"><a href="/">Overview</a><a href="/map">Explore map</a><a href="/docs">How it works</a><a class="nav-primary" href="/workspace">Open workspace ↗</a></nav>
+<nav aria-label="Primary navigation"><a href="/">Overview</a><a href="/map">Explore map</a><a href="/docs">How it works</a><a class="nav-primary" href="/admin">Open workspace ↗</a></nav>
 </header><main>
 {% macro csrf() %}<input type="hidden" name="csrf" value="{{session.csrf}}">{% endmacro %}
 {% if page in ['/','/map'] %}
 {% if page=='/' %}
-<div class="page-heading"><div><h1>Road observations dashboard</h1><p>Explore published road reports by location.</p></div></div>
+<section class="hero">
+  <div class="eyebrow">GPS-linked road condition monitoring</div>
+  <h1>Better roads begin with<br>better visibility.</h1>
+  <p class="lead">From on-road video surveys to verified pothole observations, Drishti connects evidence, location and action in one streamlined platform.</p>
+  <div class="actions"><a class="button light" href="/map">Explore road observations ↗</a><a class="button secondary" href="/docs">See how it works</a></div>
+  <div class="hero-stats"><div><strong>GPS-linked</strong><span>Evidence at every step</span></div><div><strong>AI-assisted</strong><span>Detection and review</span></div><div><strong>Human-verified</strong><span>Before public publication</span></div></div>
+</section>
+<section>
+  <div class="section-heading"><div><div class="eyebrow">How Drishti works</div><h2>From footage to actionable insight</h2></div><a href="/docs">Learn about the workflow →</a></div>
+  <div class="feature-grid">
+    <article class="feature"><div class="feature-icon">▣</div><h3>01. Capture</h3><p>Record short road video segments alongside GPS coordinates and time-aligned GPX tracks.</p></article>
+    <article class="feature"><div class="feature-icon">◎</div><h3>02. Detect</h3><p>AI processing highlights possible potholes and stores annotated, traceable evidence frames.</p></article>
+    <article class="feature"><div class="feature-icon">✓</div><h3>03. Review</h3><p>Officials inspect source video, verify observations and decide what is suitable for publication.</p></article>
+  </div>
+</section>
 {% else %}
 <div class="page-heading"><div><div class="eyebrow">PUBLIC EXPLORER</div><h1>Road observation map</h1><p>Explore published, reviewed road condition reports.</p></div><span class="status-pill">Published observations only</span></div>
 {% endif %}
@@ -21,6 +35,8 @@
   <script type="application/json" id="markers">{{rows|tojson}}</script>
 </section>
 {% elif page=='/docs' %}<h1>How Drishti works</h1><article><h2>From capture to review</h2><p>The mobile app captures a photograph with GPS metadata or a video segment paired with a GPX track. The processing server runs the pothole model and stores evidence and receipts. Reviewers inspect camera locations, compare reference points, and select media suitable for publication.</p><h2>Reading a report</h2><p>Model confidence describes a detection. GPS validation describes the supporting location evidence. Camera coordinates approximate where the road was observed. A reference match uses the configured tolerance and does not establish survey-grade accuracy.</p><h2>Reports and contact</h2><p>Open a published report from the map and choose Print / save PDF for a printable copy.</p><p>Project team and public contact: awaiting verified details from the project owner.</p></article>
+{% elif page=='offline' %}<h1>Staff workspace offline</h1><p>The public site is available. Staff sign-in, uploads and evidence review require the Drishti survey server.</p><a href='/'>Return to overview</a>
+{% elif page=='login' %}<h1>Staff sign in</h1><form method="post">{{csrf()}}<label>Username<input name="user" required autocomplete="username"></label><label>Password<input type="password" name="password" autocomplete="current-password" required></label><button>Sign in</button></form>
 {% elif page=='admin' %}
 <div class="dashboard">
 <aside class="dash-sidebar" aria-label="Workspace navigation"><div class="sidebar-title">OPERATIONS</div>
