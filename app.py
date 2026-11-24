@@ -163,11 +163,12 @@ def report(rid, public=False):
 
 
 @app.get("/")
+@app.get("/workspace")
 @app.get("/map")
 @app.get("/docs")
 def public():
     rows = db().execute("SELECT id,title,place,lat,lon,severity,captured FROM web_reports WHERE status='Published' ORDER BY captured DESC")
-    return render_template("page.html", page=request.path, rows=[dict(r) for r in rows])
+    return render_template("page.html", page="/" if request.path == "/workspace" else request.path, rows=[dict(r) for r in rows])
 
 
 @app.get("/reports/<rid>")
