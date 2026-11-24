@@ -4,6 +4,7 @@
   "buildCommand": "node build-vercel.cjs",
   "outputDirectory": "public",
   "cleanUrls": true,
+  "redirects": [{"source": "/login", "destination": "/", "permanent": false}],
   "rewrites": [
     {
       "source": "/admin/:path*",

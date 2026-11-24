@@ -28,11 +28,14 @@ class WebTests(unittest.TestCase):
             db.executescript(schema)
             db.execute("INSERT INTO web_reports(id,status) VALUES('private-id','Draft')")
         c=app.test_client()
-        for path in ["/","/map","/docs","/login"]:
+        for path in ["/","/map","/docs"]:
             self.assertEqual(c.get(path).status_code,200)
         self.assertEqual(c.get('/reports/private-id').status_code,404)
         self.assertNotIn(b'private-id',c.get('/map').data)
-        self.assertEqual(c.get('/admin').status_code,302)
+        for path in ('/admin', '/login'):
+            self.assertEqual(c.get(path).location, '/')
+        self.assertIn(b'Road observations dashboard', c.get('/').data)
+        self.assertEqual(c.get('/admin/reports/private-id').status_code, 403)
         self.assertEqual(c.post('/admin/sync').status_code,403)
 
 if __name__=='__main__': unittest.main()

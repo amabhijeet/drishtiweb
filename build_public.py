@@ -7,5 +7,5 @@ out = root / "public-pages"
 out.mkdir(exist_ok=True)
 template = Environment(loader=FileSystemLoader(root / "templates"),
                        autoescape=select_autoescape()).get_template("page.html")
-for file, page in [("index", "/"), ("map", "/map"), ("docs", "/docs"), ("login", "offline")]:
+for file, page in [("index", "/"), ("map", "/map"), ("docs", "/docs")]:
     (out / f"{file}.html").write_text(template.render(page=page, disconnected=True, rows=[]), encoding="utf-8")

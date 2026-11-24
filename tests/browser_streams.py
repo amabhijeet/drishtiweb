@@ -48,11 +48,12 @@ def main():
             }))""")
             assert ok==[160,160],ok
         page.goto(base+"/admin")
-        assert page.url.endswith("/login")
-        page.locator('[name=user]').fill(os.environ["TEST_USER"])
-        page.locator('[name=password]').fill(os.environ["TEST_PASSWORD"])
-        page.get_by_role("button",name="Sign in").click()
-        page.wait_for_url("**/admin")
+        assert page.url == base.rstrip("/") + "/"
+        token = page.locator('meta[name="csrf-token"]').get_attribute("content")
+        response = context.request.post(base+"/login", form={"csrf":token,
+            "user":os.environ["TEST_USER"], "password":os.environ["TEST_PASSWORD"]})
+        assert response.ok and response.url.endswith("/admin")
+        page.goto(base+"/admin")
         prefix = "browser-"+uuid.uuid4().hex[:10]
         stamp = datetime.now(timezone.utc).replace(microsecond=0)
         points = "".join(f'<trkpt lat="26" lon="91"><time>{(stamp+timedelta(seconds=i)).isoformat()}</time><extensions><d:videoOffsetMs>{1000*i}</d:videoOffsetMs><d:accuracyMeters>5</d:accuracyMeters></extensions></trkpt>' for i in range(2))

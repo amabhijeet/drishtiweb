@@ -1,7 +1,21 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Drishti · Road observation register</title><link rel="stylesheet" href="/static/site.css"><link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.Default.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.css"></head><body>
-<header><a class="brand" href="/">◉ Drishti</a><nav><a href="/map">Road map</a><a href="/docs">Documentation</a><a href="/admin">Workspace</a></nav></header><main>
+<header>
+<a class="brand" href="/"><span class="brand-mark">◈</span> DRISHTI <span style="font-size:.63rem;letter-spacing:.14em;color:#8da0b5;font-weight:800;margin-left:5px">ROAD INTELLIGENCE</span></a>
+<nav aria-label="Primary navigation"><a href="/">Overview</a><a href="/map">Explore map</a><a href="/docs">How it works</a></nav>
+</header><main>
 
 
-<small>ROAD INFRASTRUCTURE MONITORING</small><h1>Road conditions,<br>documented in the field.</h1><p class="lead">Drishti pairs road survey imagery with GPS tracks. Reviewers check detections and evidence before publishing observations here.</p><a class="button" href="/map">Explore the road map →</a>
-<section><h2>Published observations </h2><label>Search by ID, location, issue, date or severity <input id="search" type="search"></label><div id="map"></div><script type="application/json" id="markers">[]</script><div id="list"><p>The survey database is offline for this site. Published observations will be available once the processing service is connected.</p></div></section>
-</main><footer>Drishti · Road observation register</footer><script src="/static/vendor/leaflet/leaflet.js"></script><script src="/static/vendor/leaflet.markercluster/leaflet.markercluster.js"></script><script src="/static/map.js"></script></body></html>
+
+<div class="page-heading"><div><h1>Road observations dashboard</h1><p>Explore published road reports by location.</p></div></div>
+
+<section id="observations">
+  <div class="section-heading"><div><h2>Published observations </h2><p>Locations are approximate observations from surveyed road footage.</p></div></div>
+  <div class="notice" role="status">Live survey data is not connected to this static preview. The map and public reports will populate when the Drishti backend is available.</div>
+  <div class="map-toolbar"><label>Search observations<input id="search" type="search" placeholder="Search location, issue or report ID" aria-label="Search published road observations"></label><div class="map-hint">Map data: OpenStreetMap · Published reports only</div></div>
+  <div class="map-layout"><div id="map" role="region" aria-label="Map of published road observations"></div><div class="map-list" id="list">
+  
+  <div class="empty"><strong>No published observations yet</strong><p>The live survey database is not connected to this preview.</p></div>
+  </div></div>
+  <script type="application/json" id="markers">[]</script>
+</section>
+</main><footer><span>© Drishti · Road Infrastructure Intelligence</span><span>GPS-linked evidence · Human-reviewed observations</span></footer><script src="/static/vendor/leaflet/leaflet.js"></script><script src="/static/vendor/leaflet.markercluster/leaflet.markercluster.js"></script><script src="/static/map.js"></script></body></html>

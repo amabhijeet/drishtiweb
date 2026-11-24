@@ -39,7 +39,7 @@ app.config.update(SECRET_KEY=_secret, SESSION_COOKIE_SECURE=not LOCAL_PREVIEW,
                   MAX_CONTENT_LENGTH=520*1024**2)
 root = Path(os.environ["DRISHTI_DATA_DIR"]).resolve()
 origin = os.environ.get("DRISHTI_API", "http://127.0.0.1:10000").rstrip("/")
-roles = json.loads(os.getenv("WEB_USERS", "{}" if LOCAL_PREVIEW else "null"))
+roles = json.loads(os.getenv("WEB_USERS", "{}"))
 if not isinstance(roles, dict):
     raise RuntimeError("WEB_USERS must be configured.")
 if LOCAL_PREVIEW:
@@ -122,7 +122,9 @@ def protect():
     if request.method == "POST" and not hmac.compare_digest(session["csrf"], request.form.get("csrf", "")):
         abort(403)
     if request.path.startswith("/admin") and session.get("user") not in roles:
-        return redirect("/login")
+        if request.path.rstrip("/") == "/admin" and request.method in ("GET", "HEAD"):
+            return redirect("/")
+        abort(403)
 
 
 @app.after_request
@@ -140,11 +142,11 @@ def login():
         user = request.form.get("user","")
         account = roles.get(user)
         if not account or not check_password_hash(account["hash"], request.form.get("password","")):
-            return render_template("page.html", page="login", error="Invalid login"), 401
+            abort(401)
         session.clear()
         session["user"] = user
         return redirect("/admin")
-    return render_template("page.html", page="login")
+    return redirect("/")
 
 
 @app.post("/admin/logout")
