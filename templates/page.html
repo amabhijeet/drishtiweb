@@ -1,7 +1,7 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{% if page=='/proof-of-work' %}Proof of Work · Drishti{% else %}Drishti · Road observation register{% endif %}</title><link rel="stylesheet" href="/static/site.css"><link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.Default.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.css"></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{% if page=='/docs' and request.args.get('view')=='proof-of-work' %}Proof of Work · Drishti{% else %}Drishti · Road observation register{% endif %}</title><link rel="stylesheet" href="/static/site.css"><link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.Default.css"><link rel="stylesheet" href="/static/vendor/leaflet.markercluster/MarkerCluster.css"></head><body>
 <header>
 <a class="brand" href="/"><span class="brand-mark">◈</span> DRISHTI <span style="font-size:.63rem;letter-spacing:.14em;color:#8da0b5;font-weight:800;margin-left:5px">ROAD INTELLIGENCE</span></a>
-<nav aria-label="Primary navigation"><a href="/">Overview</a><a href="/map">Explore map</a><a href="/docs">How it works</a><a href="/proof-of-work">Proof of Work</a><a class="nav-primary" href="/admin">Open workspace ↗</a></nav>
+<nav aria-label="Primary navigation"><a href="/">Overview</a><a href="/map">Explore map</a><a href="/docs">How it works</a><a href="/docs?view=proof-of-work">Proof of Work</a><a class="nav-primary" href="/admin">Open workspace ↗</a></nav>
 </header><main>
 {% macro csrf() %}<input type="hidden" name="csrf" value="{{session.csrf}}">{% endmacro %}
 {% if page in ['/','/map'] %}
@@ -10,7 +10,7 @@
   <div class="eyebrow">GPS-linked road condition monitoring</div>
   <h1>Road surveys by video</h1>
   <p class="lead">Record a route as you drive. Drishti flags possible potholes in the footage so officials can replay the relevant moment, check its location and decide what to publish.</p>
-  <div class="actions"><a class="button light" href="/map">Explore road observations ↗</a><a class="button secondary" href="/proof-of-work">View the proof of work</a></div>
+  <div class="actions"><a class="button light" href="/map">Explore road observations ↗</a><a class="button secondary" href="/docs?view=proof-of-work">View the proof of work</a></div>
   <div class="hero-stats"><div><strong>GPS-linked</strong><span>Evidence at every step</span></div><div><strong>AI-assisted</strong><span>Detection and review</span></div><div><strong>Human-verified</strong><span>Before public publication</span></div></div>
 </section>
 <section>
@@ -34,7 +34,7 @@
   </div></div>
   <script type="application/json" id="markers">{{rows|tojson}}</script>
 </section>
-{% elif page=='/proof-of-work' %}{% include 'proof_of_work.html' %}
+{% elif page=='/docs' and request.args.get('view')=='proof-of-work' %}{% include 'proof_of_work.html' %}
 {% elif page=='/docs' %}<h1>How Drishti works</h1><article><h2>From capture to review</h2><p>The mobile app captures a photograph with GPS metadata or a video segment paired with a GPX track. The processing server runs the pothole model and stores evidence and receipts. Reviewers inspect camera locations, compare reference points, and select media suitable for publication.</p><h2>Reading a report</h2><p>Model confidence describes a detection. GPS validation describes the supporting location evidence. Camera coordinates approximate where the road was observed. A reference match uses the configured tolerance and does not establish survey-grade accuracy.</p><h2>Reports and contact</h2><p>Open a published report from the map and choose Print / save PDF for a printable copy.</p><p>Project team and public contact: awaiting verified details from the project owner.</p></article>
 {% elif page=='offline' %}<h1>Staff workspace offline</h1><p>The public site is available. Staff sign-in, uploads and evidence review require the Drishti survey server.</p><a href='/'>Return to overview</a>
 {% elif page=='login' %}<h1>Staff sign in</h1><form method="post">{{csrf()}}<label>Username<input name="user" required autocomplete="username"></label><label>Password<input type="password" name="password" autocomplete="current-password" required></label><button>Sign in</button></form>
